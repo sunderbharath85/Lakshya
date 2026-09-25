@@ -58,13 +58,13 @@ Two containers in the server setup:
 - **`caddy`**: basic auth in front of everything, including the API, the terminal and event WebSockets, and the A2A endpoints.
   - You put a plain password in `.env`; Caddy hashes it at startup.
 
-Either way, agents inside the container reach the portal directly on 127.0.0.1 with their own session tokens.
+Either way, agents inside the container reach the portal directly on 127.0.0.1 with their own session tokens, and run as a non-root user (uid 1000). A one-shot `lakshya-init` step runs first and hands the mounted folders to that user, since Docker creates a missing host folder owned by root; it shows as exited in `docker compose ps`, which is expected.
 
 | Volume | Holds |
 | --- | --- |
 | `lakshya-data` | The database and per-session files. |
 | `lakshya-home` | CLI logins and settings (`~/.claude`, `~/.codex`, OpenCode). |
-| `./workspace` → `/workspace` (local) / `lakshya-workspace` (server) | The code the agents write, one folder per team (`/workspace/main`, …). Change it with `LAKSHYA_WORKSPACE`; a host folder must be writable by uid 1000. |
+| `./workspace` → `/workspace` (local) / `lakshya-workspace` (server) | The code the agents write, one folder per team (`/workspace/main`, …). Change it with `LAKSHYA_WORKSPACE`. |
 
 Both setups use the same volumes, so moving from local to server on one machine keeps your teams, history and logins.
 
@@ -144,7 +144,7 @@ Dokploy deploys the server Compose file straight from this repo. Its Traefik han
    ```
    Add agent credentials too (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `OPENAI_API_KEY`).
    - **Leave `LAKSHYA_WORKSPACE` unset.** The agents' code then lives in the `lakshya-workspace` volume, which survives deploys and can be backed up. Never set it to `./workspace` on Dokploy: Dokploy deletes and re-clones the repo folder on every deploy, which deletes the agents' folder from under them ("The current working directory was deleted").
-   - To keep the code in a host folder instead, use `LAKSHYA_WORKSPACE=../files/workspace` (`../files` is what Dokploy keeps), and make it writable for the container's user: `sudo chown -R 1000:1000` on that folder.
+   - To keep the code in a host folder instead, use `LAKSHYA_WORKSPACE=../files/workspace` (`../files` is what Dokploy keeps).
 3. **Domains → Add domain**:
    - Service: `caddy`
    - Container port: `8080`

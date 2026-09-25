@@ -5,11 +5,27 @@
 name: lakshya
 
 services:
+  # Docker creates a missing host folder owned by root, and the agents run as uid 1000. This one-shot
+  # step hands the mounted folders to that user before the portal starts, then exits.
+  lakshya-init:
+    build: .
+    image: lakshya:latest
+    user: root
+    entrypoint: ["sh", "-c", "find /workspace /data /home/bun -maxdepth 1 ! -user 1000 -exec chown 1000:1000 {} +"]
+    restart: "no"
+    volumes:
+      - lakshya-data:/data
+      - lakshya-home:/home/bun
+      - ${LAKSHYA_WORKSPACE:-./workspace}:/workspace
+
   lakshya:
     build: .
     image: lakshya:latest
     init: true # reaps the processes agents leave behind
     restart: unless-stopped
+    depends_on:
+      lakshya-init:
+        condition: service_completed_successfully
     environment:
       AOS_PUBLIC_URL: ${LAKSHYA_PUBLIC_URL:-http://localhost:${LAKSHYA_PORT:-4777}}
       # Agent credentials. Any that are empty can be set up later by logging in inside the container.

@@ -9,6 +9,13 @@
 name: lakshya
 
 services:
+  lakshya-init:
+    extends:
+      file: compose.yaml
+      service: lakshya-init
+    volumes:
+      - ${LAKSHYA_WORKSPACE:-lakshya-workspace}:/workspace
+
   lakshya:
     extends:
       file: compose.yaml
