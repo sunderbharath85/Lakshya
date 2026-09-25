@@ -7,6 +7,8 @@ bun install
 bun dev            # http://127.0.0.1:4777
 ```
 
+Runs on macOS and Linux. On Windows, use WSL2 (see [Windows](#windows)) or Docker.
+
 ![An agent's live terminal: the Software Engineer has finished an A2A task and summarised it](docs/screenshots/terminal.png)
 
 | | |
@@ -85,6 +87,39 @@ An agent without credentials shows up as **Needs you** ("Not logged in").
 - Leave a CLI out with `none`.
 
 Redeploying restarts the container, which ends every running agent session. Tasks and history stay.
+
+## Windows
+
+Use **WSL2**. Inside it Lakshya runs exactly as on Linux: real terminals for the agents, the agent CLIs' Linux versions (Codex recommends WSL on Windows), and the same tested code paths. Running Lakshya directly in PowerShell is not supported yet.
+
+1. **Install WSL2** from an admin PowerShell, then restart:
+   ```powershell
+   wsl --install
+   ```
+   This installs Ubuntu. Open it from the Start menu and create your Linux user.
+2. **Install the tools inside Ubuntu:**
+   ```sh
+   sudo apt update && sudo apt install -y git unzip
+   curl -fsSL https://bun.sh/install | bash                 # Bun
+   curl -fsSL https://claude.ai/install.sh | bash           # Claude Code
+   curl -fsSL https://opencode.ai/install | bash            # OpenCode
+   # Codex needs Node.js 22+ (for example via nvm), then:
+   npm install -g @openai/codex
+   ```
+   Open a new terminal afterwards so the new commands are on your `PATH`.
+3. **Clone and run inside the Linux filesystem**, in your Linux home, not under `/mnt/c`:
+   ```sh
+   cd ~ && git clone https://github.com/sunderbharath85/Lakshya.git && cd Lakshya
+   bun install && bun dev
+   ```
+   Open http://localhost:4777 in your Windows browser. WSL2 forwards `localhost`.
+4. **Log the agents in once** from the Ubuntu terminal: run `claude` and use `/login`, run `codex login --device-auth`, and run `opencode auth login`. The logins are kept in your Linux home.
+
+Tips:
+- **Keep the repo and the team folders in the Linux filesystem.** Folders under `/mnt/c` are much slower for agents that read and write many files, and file permissions behave differently there.
+- **To open the agents' code from Windows**, use `\\wsl$\Ubuntu\home\<you>\Lakshya\workspace` in Explorer, or VS Code's WSL extension (`code .` from Ubuntu).
+
+**Docker on Windows** also works. Install Docker Desktop with the WSL2 backend (the default), clone the repo inside Ubuntu as above, and follow [Run with Docker Compose](#run-with-docker-compose). The containers are Linux, so it's the same image as everywhere else.
 
 ## Deploy on Dokploy
 
