@@ -5,6 +5,7 @@ Portal for a team of coding-agent personas (Claude Code / Codex / OpenCode in re
 - `src/server/`: Bun.serve, SQLite store, PTY sessions (`Bun.spawn({ terminal })` plus a headless xterm per agent for screen state), A2A JSON-RPC, autopilot supervisor.
 - `src/mcp/a2a-mcp.ts`: stdio MCP server each agent runs; its tools are how agents speak A2A.
 - `src/web/`: React + shadcn/ui (Tailwind v4 via bun-plugin-tailwind). Dark theme tokens are in `src/web/globals.css`; the `@/` alias points at `src/web/`.
+- Teams: each has its own folder and its own copies of the personas (`personas` is keyed by team_id + id). Session ids are `<team>.<persona>-<n>`. Agents are confined to their team: every agent-facing lookup goes through the sender's team (`lookupSession`, `assertVisible` in `a2a.ts`).
 - Product name: `src/shared/brand.ts` only.
 - `bun test` uses `test/fake-agent.sh` in place of a real CLI, so it makes no LLM calls. Keep it that way.
 - `bun scripts/peek.ts <session>` prints an agent's screen; use it to debug delivery and attention detection.

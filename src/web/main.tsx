@@ -1,8 +1,8 @@
 import "@xterm/xterm/css/xterm.css";
 import { createRoot } from "react-dom/client";
-import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FolderOpen, LayoutGrid, ListChecks, Plus, Settings2, Square, Users } from "lucide-react";
-import type { Activity, Persona, SessionInfo } from "../shared/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, LayoutGrid, ListChecks, Plus, Settings2, Square, Users } from "lucide-react";
+import type { Activity, Persona, SessionInfo, Team } from "../shared/types";
 import { APP_NAME } from "../shared/brand";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,7 +24,8 @@ import { api, useLive, type LiveState } from "./live";
 import { TerminalView } from "./terminal";
 import { PersonaEditor } from "./personas";
 import { TasksPanel } from "./tasks";
-import { ACTIVITY, isOpen, needsUser, shortOf, useNames, type Names } from "./names";
+import { ACTIVITY, forTeam, isOpen, needsUser, shortId, shortOf, useNames, type Names } from "./names";
+import { NewTeamDialog, TeamSettingsDialog, TeamSwitcher } from "./teams";
 
 // ---------- small pieces ----------
 
@@ -58,12 +59,12 @@ export function Logo({ className }: { className?: string }) {
 
 // ---------- sidebar: every agent, very slim ----------
 
-function Sidebar({ s, selected, onSelect }: { s: LiveState; selected: string | null; onSelect: (id: string) => void }) {
+function Sidebar({ s, team, selected, onSelect }: { s: LiveState; team: string; selected: string | null; onSelect: (id: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const start = async (p: Persona) => {
     setError(null);
     try {
-      onSelect((await api<SessionInfo>("/api/sessions", "POST", { personaId: p.id })).id);
+      onSelect((await api<SessionInfo>("/api/sessions", "POST", { personaId: p.id, team })).id);
     } catch (e) {
       setError((e as Error).message);
       setTimeout(() => setError(null), 5000);
@@ -111,7 +112,7 @@ function Sidebar({ s, selected, onSelect }: { s: LiveState; selected: string | n
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => onSelect(x.id)}
-                    aria-label={`${x.id}, ${ACTIVITY[x.activity]}`}
+                    aria-label={`${shortId(x.id)}, ${ACTIVITY[x.activity]}`}
                     aria-current={sel}
                     className={cn(
                       "relative grid size-10 shrink-0 place-items-center text-[11px] font-bold hover:bg-accent",
@@ -126,7 +127,7 @@ function Sidebar({ s, selected, onSelect }: { s: LiveState; selected: string | n
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">
-                  <p className="font-bold">{x.id}</p>
+                  <p className="font-bold">{shortId(x.id)}</p>
                   <p className="opacity-70">
                     {p.name}, {ACTIVITY[x.activity]}
                     {x.activity === "attention" && x.attentionText ? `: ${x.attentionText}` : ""}
@@ -173,6 +174,7 @@ function Sidebar({ s, selected, onSelect }: { s: LiveState; selected: string | n
 function Header(p: {
   s: LiveState;
   names: Names;
+  switcher: React.ReactNode;
   current?: SessionInfo;
   wall: boolean;
   setWall: (v: boolean) => void;
@@ -180,7 +182,7 @@ function Header(p: {
   openPersonas: () => void;
 }) {
   const { s, current } = p;
-  const persona = current && p.names.persona.get(current.personaId);
+  const persona = current && p.names.personaOfSession(current.id);
   const asks = s.tasks.filter(needsUser).length;
   const open = s.tasks.filter(isOpen).length;
   const running = s.sessions.filter((x) => x.activity !== "exited").length;
@@ -189,25 +191,25 @@ function Header(p: {
     if (v && !confirm("New agents will run commands and edit files without asking. Agents already running keep their mode. Turn on YOLO?")) return;
     api("/api/settings", "PUT", { yoloAll: v });
   };
-  const editFolder = () => {
-    const dir = prompt("Folder the agents work in. Applies to sessions started from now on.", s.settings.workspaceDir);
-    if (dir && dir !== s.settings.workspaceDir) api("/api/settings", "PUT", { workspaceDir: dir });
-  };
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-3 sm:gap-3 sm:px-4">
-      <div className="flex min-w-0 flex-1 items-baseline gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <h1 className="hidden font-bold sm:block">{APP_NAME}</h1>
+        {p.switcher}
+        <span className="hidden text-muted-foreground/50 sm:inline" aria-hidden>
+          /
+        </span>
         {p.wall ? (
           <span className="truncate font-bold">All sessions</span>
         ) : current && persona ? (
           <>
-            <span className="truncate font-bold">{current.id}</span>
+            <span className="min-w-12 truncate font-bold">{shortId(current.id)}</span>
             <span className="hidden truncate text-sm text-muted-foreground md:inline">
               {persona.name}, {current.runtime}, started by {p.names.who(current.spawnedBy)}
             </span>
             <span className={cn("flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground", current.activity === "attention" && "text-destructive")}>
-              <Mark activity={current.activity} /> {ACTIVITY[current.activity]}
+              <Mark activity={current.activity} /> <span className="hidden sm:inline">{ACTIVITY[current.activity]}</span>
             </span>
           </>
         ) : (
@@ -221,11 +223,11 @@ function Header(p: {
       {!p.wall && current && current.activity !== "exited" && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={`Stop ${current.id}`} onClick={() => api(`/api/sessions/${current.id}`, "DELETE")}>
+            <Button variant="ghost" size="icon" aria-label={`Stop ${shortId(current.id)}`} onClick={() => api(`/api/sessions/${current.id}`, "DELETE")}>
               <Square />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Stop {current.id}</TooltipContent>
+          <TooltipContent>Stop {shortId(current.id)}</TooltipContent>
         </Tooltip>
       )}
       {running > 1 && (
@@ -251,12 +253,8 @@ function Header(p: {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuLabel>Settings</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={editFolder}>
-            <FolderOpen />
-            <span className="truncate">Folder: {s.settings.workspaceDir.split("/").filter(Boolean).at(-1)}</span>
-          </DropdownMenuItem>
           <DropdownMenuItem onSelect={p.openPersonas}>
-            <Users /> Edit personas
+            <Users /> Edit this team's personas
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem checked={s.settings.autopilot} onCheckedChange={(v) => api("/api/settings", "PUT", { autopilot: v === true })}>
@@ -304,13 +302,13 @@ function KeyRow({ session }: { session: SessionInfo }) {
       }}
     >
       <label htmlFor="keyline" className="sr-only">
-        Type into {session.id}
+        Type into {shortId(session.id)}
       </label>
       <Input
         id="keyline"
         value={line}
         onChange={(e) => setLine(e.target.value)}
-        placeholder={`Type into ${session.id}`}
+        placeholder={`Type into ${shortId(session.id)}`}
         autoComplete="off"
         className="h-8 basis-full font-mono text-sm sm:min-w-40 sm:flex-1 sm:basis-auto"
       />
@@ -325,7 +323,7 @@ function KeyRow({ session }: { session: SessionInfo }) {
   );
 }
 
-function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: SessionInfo; wall: boolean; onPick: (id: string) => void }) {
+function SessionArea({ s, team, current, wall, onPick }: { s: LiveState; team: Team; current?: SessionInfo; wall: boolean; onPick: (id: string) => void }) {
   const running = s.sessions.filter((x) => x.activity !== "exited");
   const send = (data: string) => current && api(`/api/sessions/${current.id}/input`, "POST", { data });
 
@@ -335,7 +333,7 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
         {running.map((x) => (
           <button key={x.id} className="grid min-h-0 grid-rows-[auto_1fr] overflow-hidden bg-terminal text-left" onClick={() => onPick(x.id)}>
             <span className="flex items-center gap-2 bg-sidebar px-3 py-1.5 text-sm font-bold">
-              <Mark activity={x.activity} /> {x.id} <span className="font-normal text-muted-foreground">{ACTIVITY[x.activity]}</span>
+              <Mark activity={x.activity} /> {shortId(x.id)} <span className="font-normal text-muted-foreground">{ACTIVITY[x.activity]}</span>
             </span>
             <TerminalView sessionId={x.id} mode="tile" />
           </button>
@@ -349,11 +347,12 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
     return (
       <div className="flex min-h-0 flex-1 items-end bg-terminal p-6 sm:p-10">
         <div className="max-w-xl space-y-3">
-          <p className="text-3xl font-bold tracking-tight sm:text-4xl">What should the team build?</p>
+          <p className="text-3xl font-bold tracking-tight sm:text-4xl">What should {team.name} build?</p>
           <p className="text-muted-foreground">
             Type a request below. The {entry?.name ?? "entry persona"} picks it up in its own terminal and brings in the rest of the team as needed. Every agent
             appears in the sidebar; click one to watch it or type into it.
           </p>
+          <p className="font-mono text-xs text-muted-foreground/70">{team.workspaceDir}</p>
         </div>
       </div>
     );
@@ -364,7 +363,7 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
       {current.activity === "attention" && (
         <div role="alert" className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-destructive/40 bg-destructive/15 px-4 py-2">
           <p className="min-w-0 text-sm">
-            <strong className="text-destructive">{current.id} is asking.</strong> {current.attentionText}
+            <strong className="text-destructive">{shortId(current.id)} is asking.</strong> {current.attentionText}
           </p>
           <div className="flex gap-2">
             <Button size="sm" variant="destructive" className="font-bold" onClick={() => send("\r")}>
@@ -380,7 +379,7 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
       {current.activity === "exited" ? (
         <div className="flex shrink-0 items-center gap-3 border-t px-4 py-2 text-sm text-muted-foreground">
           This session has stopped.
-          <Button size="sm" variant="secondary" onClick={() => api<SessionInfo>("/api/sessions", "POST", { personaId: current.personaId }).then((x) => onPick(x.id))}>
+          <Button size="sm" variant="secondary" onClick={() => api<SessionInfo>("/api/sessions", "POST", { personaId: current.personaId, team: current.teamId }).then((x) => onPick(x.id))}>
             Start a new one
           </Button>
         </div>
@@ -393,7 +392,7 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
 
 // ---------- request bar ----------
 
-function RequestBar({ s }: { s: LiveState }) {
+function RequestBar({ s, team }: { s: LiveState; team: Team }) {
   const entry = s.personas.find((p) => p.entry) ?? s.personas[0];
   const [to, setTo] = useState("");
   const [text, setText] = useState("");
@@ -405,7 +404,7 @@ function RequestBar({ s }: { s: LiveState }) {
     setBusy(true);
     setNote(null);
     try {
-      await api("/api/request", "POST", { text, to: target.id });
+      await api("/api/request", "POST", { text, to: target.id, team: team.id });
       setText("");
       setNote({ ok: true, text: `Sent to ${target.name}` });
       setTimeout(() => setNote(null), 4000);
@@ -431,7 +430,7 @@ function RequestBar({ s }: { s: LiveState }) {
         <Textarea
           id="request"
           rows={1}
-          placeholder="Ask the team to build something"
+          placeholder={`Ask ${team.name} to build something`}
           title={`${mod}+Enter sends`}
           className="field-sizing-content max-h-40 min-h-9 resize-none text-base"
           value={text}
@@ -472,71 +471,111 @@ function RequestBar({ s }: { s: LiveState }) {
 // ---------- app ----------
 
 const EMPTY: LiveState = {
+  teams: [],
   personas: [],
   sessions: [],
   tasks: [],
   messages: [],
-  settings: { workspaceDir: "", yoloAll: false, autopilot: true, nudgeAfterSec: 90 },
+  settings: { workspacesRoot: "", yoloAll: false, autopilot: true, nudgeAfterSec: 90 },
   runtimes: [],
   connected: false,
 };
 
+/** The team you last looked at, remembered per browser. */
+const TEAM_KEY = "lakshya.team";
+function savedTeam() {
+  try {
+    return localStorage.getItem(TEAM_KEY) ?? "main";
+  } catch {
+    return "main";
+  }
+}
+
 function App() {
   const live = useLive();
-  const s = live ?? EMPTY;
-  const names = useNames(s);
+  const all = live ?? EMPTY;
+  const names = useNames(all);
+  const [teamId, setTeamId] = useState(savedTeam);
+  const team = all.teams.find((t) => t.id === teamId) ?? all.teams.find((t) => t.id === "main") ?? all.teams[0];
+  const s = useMemo(() => forTeam(all, team?.id ?? ""), [all, team?.id]);
+
   const [selected, setSelectedRaw] = useState<string | null>(null);
   const [wall, setWall] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [personasOpen, setPersonasOpen] = useState(false);
+  const [newTeamOpen, setNewTeamOpen] = useState(false);
+  const [teamSettingsOpen, setTeamSettingsOpen] = useState(false);
   const [openTask, setOpenTask] = useState<string | null>(null);
   const follow = useRef(true);
 
-  // Follow the newest session until the user picks one.
+  // Follow the team's newest session until the user picks one.
   const newest = s.sessions.filter((x) => x.activity !== "exited").at(-1)?.id;
   useEffect(() => {
     if (newest && (follow.current || !selected)) setSelectedRaw(newest);
   }, [newest]);
 
-  if (!live) return <p className="p-6 text-lg text-muted-foreground">Connecting to {APP_NAME}</p>;
+  if (!live || !team) return <p className="p-6 text-lg text-muted-foreground">Connecting to {APP_NAME}</p>;
 
   const pick = (id: string) => {
     follow.current = false;
     setSelectedRaw(id);
     setWall(false);
   };
-  const current = selected ? names.session.get(selected) : undefined;
+  const switchTeam = (id: string) => {
+    setTeamId(id);
+    try {
+      localStorage.setItem(TEAM_KEY, id);
+    } catch {}
+    const first = all.sessions.filter((x) => x.teamId === id && x.activity !== "exited").at(-1)?.id ?? null;
+    follow.current = true;
+    setSelectedRaw(first);
+    setWall(false);
+    setOpenTask(null);
+  };
+  const current = selected && names.session.get(selected)?.teamId === team.id ? names.session.get(selected) : undefined;
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex h-dvh overflow-hidden">
-        <Sidebar s={s} selected={selected} onSelect={pick} />
+        <Sidebar s={s} team={team.id} selected={selected} onSelect={pick} />
         <main className="flex min-w-0 flex-1 flex-col">
-          <Header s={s} names={names} current={current} wall={wall} setWall={setWall} openTasks={() => setTasksOpen(true)} openPersonas={() => setPersonasOpen(true)} />
-          <SessionArea s={s} current={current} wall={wall} onPick={pick} />
-          <RequestBar s={s} />
+          <Header
+            s={s}
+            names={names}
+            switcher={<TeamSwitcher s={all} team={team} onPick={switchTeam} onNew={() => setNewTeamOpen(true)} onSettings={() => setTeamSettingsOpen(true)} />}
+            current={current}
+            wall={wall}
+            setWall={setWall}
+            openTasks={() => setTasksOpen(true)}
+            openPersonas={() => setPersonasOpen(true)}
+          />
+          <SessionArea s={s} team={team} current={current} wall={wall} onPick={pick} />
+          <RequestBar key={team.id} s={s} team={team} />
         </main>
       </div>
 
       <Sheet open={tasksOpen} onOpenChange={setTasksOpen}>
         <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-md">
           <SheetHeader className="px-6 pt-5">
-            <SheetTitle className="text-xl font-bold">Tasks</SheetTitle>
-            <SheetDescription>Every A2A task between you and the agents, newest first.</SheetDescription>
+            <SheetTitle className="text-xl font-bold">{team.name} tasks</SheetTitle>
+            <SheetDescription>Every A2A task between you and this team's agents, newest first.</SheetDescription>
           </SheetHeader>
-          <TasksPanel s={s} names={names} openTask={openTask} setOpenTask={setOpenTask} />
+          <TasksPanel key={team.id} s={s} names={names} openTask={openTask} setOpenTask={setOpenTask} />
         </SheetContent>
       </Sheet>
 
       <Sheet open={personasOpen} onOpenChange={setPersonasOpen}>
         <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-3xl">
           <SheetHeader className="px-6 pt-5 pb-3">
-            <SheetTitle className="text-xl font-bold">Personas</SheetTitle>
-            <SheetDescription>Roles, rules and runtimes. Changes apply to sessions started after you save.</SheetDescription>
+            <SheetTitle className="text-xl font-bold">{team.name} personas</SheetTitle>
+            <SheetDescription>This team's own roles, rules and runtimes. Other teams have their own copies. Changes apply to sessions started after you save.</SheetDescription>
           </SheetHeader>
-          <PersonaEditor s={s} />
+          <PersonaEditor key={team.id} s={s} team={team.id} />
         </SheetContent>
       </Sheet>
+
+      <NewTeamDialog s={all} open={newTeamOpen} onOpenChange={setNewTeamOpen} onCreated={(t) => switchTeam(t.id)} />
+      <TeamSettingsDialog s={all} team={team} open={teamSettingsOpen} onOpenChange={setTeamSettingsOpen} onDeleted={() => switchTeam("main")} />
     </TooltipProvider>
   );
 }

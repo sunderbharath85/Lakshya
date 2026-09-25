@@ -1,18 +1,18 @@
 import { APP_NAME } from "../shared/brand";
-import type { Persona } from "../shared/types";
+import type { Persona, Team } from "../shared/types";
 import { listPersonas } from "./store";
 
 export function canTalk(from: Persona, toPersonaId: string) {
   return from.canTalkTo.includes("*") || from.canTalkTo.includes(toPersonaId);
 }
 
-export function buildSystemPrompt(persona: Persona, sessionId: string, cwd: string) {
-  const team = listPersonas().filter((p) => p.id !== persona.id);
+export function buildSystemPrompt(teamInfo: Team, persona: Persona, sessionId: string) {
+  const team = listPersonas(teamInfo.id).filter((p) => p.id !== persona.id);
   const reachable = team.filter((p) => canTalk(persona, p.id));
   const lines = [
-    `# ${APP_NAME}: you are ${persona.name}`,
+    `# ${APP_NAME}: you are ${persona.name} on the ${teamInfo.name} team`,
     `Session id: ${sessionId}. Role: ${persona.title}.`,
-    `Shared workspace (your working directory): ${cwd}`,
+    `Shared workspace (your working directory): ${teamInfo.workspaceDir}`,
     "",
     "## Your role",
     persona.instructions.trim(),
@@ -20,7 +20,8 @@ export function buildSystemPrompt(persona: Persona, sessionId: string, cwd: stri
     "## Rules",
     ...(persona.rules.length ? persona.rules.map((r) => `- ${r}`) : ["- None beyond the team protocol."]),
     "",
-    "## Your team",
+    `## Your team (${teamInfo.name})`,
+    "You only work with this team. Other teams exist in this portal but you cannot see or message them.",
     ...reachable.map((p) => `- ${p.id}: ${p.name}, ${p.title}. ${p.description}`),
     "- user: the human who runs this portal. Message them when you need a decision only they can make.",
     ...(reachable.length < team.length

@@ -11,8 +11,18 @@ export interface Skill {
   tags: string[];
 }
 
-export interface Persona {
+/** A team works on one project: its own folder and its own copy of the personas. Teams can't see each other. */
+export interface Team {
   id: string;
+  name: string;
+  workspaceDir: string;
+  createdAt: number;
+}
+
+export interface Persona {
+  /** Unique within its team. */
+  id: string;
+  teamId: string;
   name: string;
   /** 1-3 letter code shown in the slim sidebar. */
   short?: string;
@@ -42,7 +52,9 @@ export interface Persona {
 export type Activity = "starting" | "idle" | "working" | "attention" | "exited";
 
 export interface SessionInfo {
+  /** Globally unique: "<team>.<persona>-<n>", e.g. "main.sde-2". */
   id: string;
+  teamId: string;
   personaId: string;
   label: string;
   runtime: RuntimeId;
@@ -102,6 +114,7 @@ export interface A2ATask {
   artifacts?: Artifact[];
   metadata: {
     title: string;
+    team: string;
     /** "user", "external" or a session id */
     from: string;
     /** session id of the executor */
@@ -113,7 +126,8 @@ export interface A2ATask {
 }
 
 export interface Settings {
-  workspaceDir: string;
+  /** Where new teams get their folders (read-only; set with AOS_WORKSPACE). */
+  workspacesRoot: string;
   /** Forces yolo mode on every agent started from now on. */
   yoloAll: boolean;
   /** Supervisor loop: re-prompt idle agents that still owe work. */
@@ -123,7 +137,8 @@ export interface Settings {
 }
 
 export type ServerEvent =
-  | { type: "snapshot"; personas: Persona[]; sessions: SessionInfo[]; tasks: A2ATask[]; messages: A2AMessage[]; settings: Settings }
+  | { type: "snapshot"; teams: Team[]; personas: Persona[]; sessions: SessionInfo[]; tasks: A2ATask[]; messages: A2AMessage[]; settings: Settings }
+  | { type: "teams"; teams: Team[] }
   | { type: "personas"; personas: Persona[] }
   | { type: "session"; session: SessionInfo }
   | { type: "task"; task: A2ATask }

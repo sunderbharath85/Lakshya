@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { A2AMessage, A2ATask, Persona, ServerEvent, SessionInfo, Settings } from "../shared/types";
+import type { A2AMessage, A2ATask, Persona, ServerEvent, SessionInfo, Settings, Team } from "../shared/types";
 
 export interface RuntimeInfo {
   id: string;
@@ -8,6 +8,7 @@ export interface RuntimeInfo {
 }
 
 export interface LiveState {
+  teams: Team[];
   personas: Persona[];
   sessions: SessionInfo[];
   tasks: A2ATask[];
@@ -27,6 +28,8 @@ function upsert<T extends { id: string }>(list: T[], item: T) {
 
 function apply(s: LiveState, e: ServerEvent): LiveState {
   switch (e.type) {
+    case "teams":
+      return { ...s, teams: e.teams };
     case "personas":
       return { ...s, personas: e.personas };
     case "session":

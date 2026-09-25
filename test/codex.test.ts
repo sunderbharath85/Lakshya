@@ -67,12 +67,12 @@ test("a Codex persona in YOLO mode takes an A2A task through its MCP bridge (fak
   const s = await startServer(4798, { AOS_CODEX_BIN: `${import.meta.dir}/fake-codex.ts`, FAKE_CODEX_ARGV: argvFile });
 
   const task = await s.call("/api/request", "POST", { text: "Build the health endpoint", to: "sde" });
-  expect(task.metadata.to).toBe("sde-1");
+  expect(task.metadata.to).toBe("main.sde-1");
   const done = await waitForTask(s, task.id, 20_000);
 
   expect(done.status.state).toBe("completed");
   expect(done.artifacts[0].parts[0].text).toBe("done by fake codex (yolo=true)");
-  const session = (await s.call("/api/state")).sessions.find((x: any) => x.id === "sde-1");
+  const session = (await s.call("/api/state")).sessions.find((x: any) => x.id === "main.sde-1");
   expect(session.runtime).toBe("codex");
 
   // YOLO from Settings overrides the persona's own acceptEdits mode.
@@ -81,7 +81,7 @@ test("a Codex persona in YOLO mode takes an A2A task through its MCP bridge (fak
   expect(argv).not.toContain("--sandbox");
   rmSync(argvFile, { force: true });
 
-  const screen = await s.screen("sde-1");
+  const screen = await s.screen("main.sde-1");
   expect(screen).toContain("fake codex ready (yolo=true");
   expect(screen).toContain("mcp tools: list_agents,send_message,check_inbox,update_task");
 }, 30_000);
@@ -93,19 +93,19 @@ test("nothing is typed into Codex's trust menu; the task waits until a person an
   // The session is flagged for a person and the [A2A] notice stays queued.
   let session: any;
   for (let i = 0; i < 40; i++) {
-    session = (await s.call("/api/state")).sessions.find((x: any) => x.id === "sde-1");
+    session = (await s.call("/api/state")).sessions.find((x: any) => x.id === "main.sde-1");
     if (session?.activity === "attention") break;
     await Bun.sleep(250);
   }
   expect(session.activity).toBe("attention");
   expect(session.attentionText).toContain("Trust this folder");
   await Bun.sleep(2500);
-  session = (await s.call("/api/state")).sessions.find((x: any) => x.id === "sde-1");
+  session = (await s.call("/api/state")).sessions.find((x: any) => x.id === "main.sde-1");
   expect(session.activity).toBe("attention");
   expect(session.pendingDeliveries).toBe(1);
 
   // The person accepts (the Accept button sends Enter); the notice is then delivered and the task completes.
-  await s.call("/api/sessions/sde-1/input", "POST", { data: "\r" });
+  await s.call("/api/sessions/main.sde-1/input", "POST", { data: "\r" });
   const done = await waitForTask(s, task.id, 20_000);
   expect(done.status.state).toBe("completed");
 }, 30_000);
@@ -125,8 +125,8 @@ test.skipIf(!process.env.AOS_LIVE_CODEX)(
     const done = await waitForTask(s, task.id, 6 * 60_000);
 
     expect(done.status.state).toBe("completed");
-    expect(readFileSync(`${ws}/hello.txt`, "utf8").trim()).toBe("hi from codex");
-    const cmd: string[] = JSON.parse(readFileSync(`${s.dir}/data/sessions/sde-1/command.json`, "utf8"));
+    expect(readFileSync(`${ws}/main/hello.txt`, "utf8").trim()).toBe("hi from codex"); // the main team's folder
+    const cmd: string[] = JSON.parse(readFileSync(`${s.dir}/data/sessions/main.sde-1/command.json`, "utf8"));
     expect(cmd).toContain("--dangerously-bypass-approvals-and-sandbox");
     rmSync(ws, { recursive: true, force: true });
   },

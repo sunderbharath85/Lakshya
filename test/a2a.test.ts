@@ -59,27 +59,27 @@ async function screenOf(id: string) {
 
 test("serves an A2A agent card for the entry persona", async () => {
   const card = await get("/.well-known/agent-card.json");
-  expect(card.name).toBe("Product Manager");
-  expect(card.url).toBe(`${BASE}/a2a/product-manager`);
+  expect(card.name).toBe("Product Manager, Main team");
+  expect(card.url).toBe(`${BASE}/a2a/main/product-manager`);
   expect(card.capabilities.streaming).toBe(true);
 });
 
 test("a request spawns the entry persona and types an [A2A] notice into its terminal", async () => {
   const task = await post("/api/request", { text: "Build a todo app" });
   expect(task.status.state).toBe("submitted");
-  expect(task.metadata.to).toBe("product-manager-1");
+  expect(task.metadata.to).toBe("main.product-manager-1");
 
   // The notice waits until the fake agent's screen is quiet, then is typed in.
   let screen = "";
   for (let i = 0; i < 40 && !screen.includes("got: [A2A]"); i++) {
     await Bun.sleep(250);
-    screen = await screenOf("product-manager-1");
+    screen = await screenOf("main.product-manager-1");
   }
   expect(screen).toContain(`got: [A2A] New task from the user. Task ${task.id}`);
 });
 
 test("agents delegate over A2A, reply, and results flow back", async () => {
-  const pm = tokenOf("product-manager-1");
+  const pm = tokenOf("main.product-manager-1");
   const inbox = await post("/api/agent/inbox", {}, pm);
   expect(inbox.messages).toHaveLength(1);
   const userTask = inbox.tasks[0];
@@ -87,12 +87,12 @@ test("agents delegate over A2A, reply, and results flow back", async () => {
 
   // PM delegates to the project manager via A2A message/send; a session starts for it.
   const sent = await rpc("project-manager", "message/send", { message: text("Plan the todo app from docs/brief.md") }, pm);
-  expect(sent.result.metadata.from).toBe("product-manager-1");
-  expect(sent.result.metadata.to).toBe("project-manager-1");
+  expect(sent.result.metadata.from).toBe("main.product-manager-1");
+  expect(sent.result.metadata.to).toBe("main.project-manager-1");
   const child = sent.result.id;
 
   // The project manager asks a question, the PM answers on the same task.
-  const proj = tokenOf("project-manager-1");
+  const proj = tokenOf("main.project-manager-1");
   await post("/api/agent/inbox", {}, proj);
   await post(`/api/agent/tasks/${child}/status`, { state: "input-required", message: "Web or mobile?" }, proj);
   let t = (await rpc("", "tasks/get", { id: child }, pm)).result;
@@ -108,7 +108,7 @@ test("agents delegate over A2A, reply, and results flow back", async () => {
   const done = await waiting;
   expect(done.status.state).toBe("completed");
   expect(done.artifacts[0].name).toBe("plan");
-  expect(done.history.map((m: any) => m.metadata.from)).toEqual(["product-manager-1", "project-manager-1", "product-manager-1", "project-manager-1"]);
+  expect(done.history.map((m: any) => m.metadata.from)).toEqual(["main.product-manager-1", "main.project-manager-1", "main.product-manager-1", "main.project-manager-1"]);
 
   // The PM completes the user's task.
   const finished = await post(`/api/agent/tasks/${userTask.id}/status`, { state: "completed", message: "Shipped." }, pm);
@@ -129,14 +129,14 @@ test("canTalkTo rules are enforced", async () => {
 });
 
 test("only the assignee can update a task, and only spawners can spawn", async () => {
-  const pm = tokenOf("product-manager-1");
+  const pm = tokenOf("main.product-manager-1");
   const sent = await rpc("sde", "message/send", { message: text("Build the API") }, pm);
-  const other = await post(`/api/agent/tasks/${sent.result.id}/status`, { state: "completed", message: "x" }, tokenOf("project-manager-1"));
+  const other = await post(`/api/agent/tasks/${sent.result.id}/status`, { state: "completed", message: "x" }, tokenOf("main.project-manager-1"));
   expect(other.error).toContain("Only");
   const denied = await post("/api/agent/spawn", { persona: "tester" }, tokenOf(sent.result.metadata.to));
   expect(denied.error).toContain("may not start sessions");
-  const ok = await post("/api/agent/spawn", { persona: "tester" }, tokenOf("project-manager-1"));
-  expect(ok.id).toBe("tester-1");
+  const ok = await post("/api/agent/spawn", { persona: "tester" }, tokenOf("main.project-manager-1"));
+  expect(ok.id).toBe("main.tester-1");
 });
 
 test("message/stream sends the task then status updates until it settles", async () => {
@@ -174,7 +174,7 @@ test("message/stream sends the task then status updates until it settles", async
 });
 
 test("stopping a session fails the tasks it still owed", async () => {
-  const pm = tokenOf("product-manager-1");
+  const pm = tokenOf("main.product-manager-1");
   const sent = await rpc("frontend-engineer", "message/send", { message: text("Build the UI") }, pm);
   const fe = sent.result.metadata.to;
   await fetch(`${BASE}/api/sessions/${fe}`, { method: "DELETE" });
@@ -188,7 +188,7 @@ test("stopping a session fails the tasks it still owed", async () => {
 
 test("autopilot re-prompts an idle agent that still owes work", async () => {
   await fetch(`${BASE}/api/settings`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ nudgeAfterSec: 1 }) });
-  const pm = tokenOf("product-manager-1");
+  const pm = tokenOf("main.product-manager-1");
   const sent = await rpc("tester", "message/send", { message: text("Write the e2e suite") }, pm);
   const id = sent.result.metadata.to;
   let screen = "";

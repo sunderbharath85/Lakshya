@@ -12,6 +12,8 @@ git config --global --get safe.directory >/dev/null 2>&1 || git config --global 
 
 # The workspace belongs to this deployment: trust it up front so agents don't stop at a
 # "trust this folder?" menu. Set AOS_TRUST_WORKSPACE=0 to answer those menus yourself.
+# Claude Code's trust covers every team folder under it; Codex trust is added per team folder by
+# the server when it starts a Codex agent.
 if [ "${AOS_TRUST_WORKSPACE:-1}" = "1" ]; then
   # Claude Code: skip first-run onboarding and trust the workspace.
   bun -e '

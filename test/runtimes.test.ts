@@ -5,7 +5,7 @@ import type { PermissionMode, Persona } from "../src/shared/types";
 import type { LaunchContext, Runtime } from "../src/server/runtimes";
 
 let RUNTIMES: Record<string, Runtime>;
-let DEFAULT_PERSONAS: Persona[];
+let DEFAULT_PERSONAS: Omit<Persona, "teamId">[];
 const dir = mkdtempSync(`${tmpdir()}/aos-runtimes-`);
 
 beforeAll(async () => {
@@ -17,7 +17,7 @@ beforeAll(async () => {
 });
 
 function ctx(permissionMode: PermissionMode, model = ""): LaunchContext {
-  const persona = { ...DEFAULT_PERSONAS.find((p) => p.id === "sde")!, runtime: "codex" as const, model };
+  const persona: Persona = { ...DEFAULT_PERSONAS.find((p) => p.id === "sde")!, teamId: "main", runtime: "codex" as const, model };
   return {
     persona,
     sessionId: "sde-7",
@@ -125,5 +125,28 @@ describe("opencode runtime", () => {
     expect(config.mcp.a2a.command).toEqual([process.execPath, "run", expect.stringMatching(/a2a-mcp\.ts$/), "--url", "http://127.0.0.1:4777", "--session", "sde-7", "--token", "tok-123"]);
     expect(config.instructions).toEqual([`${dir}/role.md`]);
     expect(firstInput).toContain("check_inbox");
+  });
+});
+
+describe("codex folder trust", () => {
+  test("recorded once per team folder when the deployment owns its folders, never otherwise", async () => {
+    const home = `${dir}/codex-home`;
+    await Bun.write(`${home}/config.toml`, 'model = "gpt-5"\n');
+    process.env.CODEX_HOME = home;
+    try {
+      await RUNTIMES.codex!.build({ ...ctx("yolo"), cwd: "/workspace/mobile-app" });
+      expect(await Bun.file(`${home}/config.toml`).text()).not.toContain("projects"); // AOS_TRUST_WORKSPACE unset
+
+      process.env.AOS_TRUST_WORKSPACE = "1";
+      await RUNTIMES.codex!.build({ ...ctx("yolo"), cwd: "/workspace/mobile-app" });
+      await RUNTIMES.codex!.build({ ...ctx("yolo"), cwd: "/workspace/mobile-app" });
+      await RUNTIMES.codex!.build({ ...ctx("yolo"), cwd: "/workspace/web" });
+      const config = Bun.TOML.parse(await Bun.file(`${home}/config.toml`).text()) as any;
+      expect(config.model).toBe("gpt-5");
+      expect(config.projects).toEqual({ "/workspace/mobile-app": { trust_level: "trusted" }, "/workspace/web": { trust_level: "trusted" } });
+    } finally {
+      delete process.env.AOS_TRUST_WORKSPACE;
+      delete process.env.CODEX_HOME;
+    }
   });
 });

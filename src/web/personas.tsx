@@ -13,6 +13,7 @@ import { shortOf } from "./names";
 
 const BLANK: Persona = {
   id: "",
+  teamId: "",
   name: "",
   short: "",
   title: "",
@@ -56,7 +57,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export function PersonaEditor({ s }: { s: LiveState }) {
+export function PersonaEditor({ s, team }: { s: LiveState; team: string }) {
+  const base = `/api/teams/${team}/personas`;
   const [selectedId, setSelectedId] = useState<string | null>(s.personas[0]?.id ?? null);
   const [draft, setDraft] = useState<Persona | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -76,11 +78,11 @@ export function PersonaEditor({ s }: { s: LiveState }) {
     try {
       const clean = { ...draft, rules: draft.rules.map((r) => r.trim()).filter(Boolean) };
       if (isNew) {
-        await api("/api/personas", "POST", clean);
+        await api(base, "POST", clean);
         setIsNew(false);
         setSelectedId(clean.id);
       } else {
-        await api(`/api/personas/${clean.id}`, "PUT", clean);
+        await api(`${base}/${clean.id}`, "PUT", clean);
       }
       setStatus({ ok: true, text: "Saved. New sessions of this persona use these settings." });
     } catch (e) {
@@ -89,12 +91,12 @@ export function PersonaEditor({ s }: { s: LiveState }) {
   };
   const remove = async () => {
     if (!draft || !confirm(`Delete ${draft.name}? Running sessions keep going until you stop them.`)) return;
-    await api(`/api/personas/${draft.id}`, "DELETE");
+    await api(`${base}/${draft.id}`, "DELETE");
     setSelectedId(s.personas.find((p) => p.id !== draft.id)?.id ?? null);
   };
   const reset = async () => {
-    if (!confirm("Replace every persona with the six defaults? Your edits and custom personas will be lost.")) return;
-    await api("/api/personas/reset", "POST");
+    if (!confirm("Replace this team's personas with the six defaults? Its edits and custom personas will be lost. Other teams are not affected.")) return;
+    await api(`${base}/reset`, "POST");
     setIsNew(false);
   };
 
@@ -130,7 +132,7 @@ export function PersonaEditor({ s }: { s: LiveState }) {
           className="shrink-0 border-foreground"
           onClick={() => {
             setIsNew(true);
-            setDraft(structuredClone(BLANK));
+            setDraft({ ...structuredClone(BLANK), teamId: team });
             setStatus(null);
           }}
         >

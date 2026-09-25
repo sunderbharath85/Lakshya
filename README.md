@@ -20,6 +20,17 @@ bun dev            # http://127.0.0.1:4777
 
 Type a request in the bar at the bottom. The Product Manager picks it up, writes a brief and hands it to the Project Manager. The Project Manager splits the work, starts engineer and QA sessions, and tracks each task to done. Every agent appears in the sidebar as a terminal you can watch and type into. Tasks and their full A2A history are in the **Tasks** flyout.
 
+## Teams
+
+Run several projects side by side, each with its own team. Pick a team, or create one, from the switcher next to the product name.
+
+- **Own folder.** Each team works in its own folder: by default `<workspace root>/<team>`, changeable in the team's settings.
+- **Own personas.** A new team gets a copy of the default six, or of another team's personas. Editing one team's personas never changes another's.
+- **Isolated.** Agents only see and message their own team. A persona id like `sde` means that team's engineer; another team's agents and tasks don't exist for them.
+- **One place for you.** The request bar, sidebar, Tasks and Personas all show the current team. A red count on the switcher tells you when another team is waiting on you.
+
+Session ids carry the team (`mobile-app.sde-1`); the UI and agents can use the short form (`sde-1`) inside a team. An existing install from before teams becomes the **Main** team, keeping its folder, personas and history. Deleting a team removes its personas, tasks and history, but not its folder.
+
 ## Run with Docker Compose
 
 ```sh
@@ -44,7 +55,7 @@ Agents inside the container reach the portal directly on 127.0.0.1 with their ow
 | --- | --- |
 | `lakshya-data` | The database and per-session files. |
 | `lakshya-home` | CLI logins and settings (`~/.claude`, `~/.codex`, OpenCode). |
-| `./workspace` → `/workspace` | The code the agents write. Change it with `LAKSHYA_WORKSPACE`. |
+| `./workspace` → `/workspace` | The code the agents write, one folder per team (`/workspace/main`, …). Change it with `LAKSHYA_WORKSPACE`. |
 
 **Agent logins.** Set these in `.env`, or log in once inside the container; logins persist in `lakshya-home`.
 
@@ -59,7 +70,7 @@ An agent without credentials shows up as **Needs you** ("Not logged in").
 **On first start**, the entrypoint:
 
 - skips Claude Code's first-run onboarding;
-- marks `/workspace` as trusted for Claude Code and Codex, so agents don't stop at a "trust this folder?" menu (set `AOS_TRUST_WORKSPACE=0` to answer those yourself);
+- marks `/workspace` as trusted for Claude Code, which covers every team folder under it; the server adds Codex trust for each team's folder when it starts a Codex agent. Either way agents don't stop at a "trust this folder?" menu (set `AOS_TRUST_WORKSPACE=0` to answer those yourself);
 - sets a git identity so agents can commit.
 
 **HTTPS.** Basic auth over plain HTTP sends the password in the clear, so use HTTPS for anything beyond localhost:
@@ -114,8 +125,8 @@ Notes:
 
 - **Sessions** (`src/server/sessions.ts`). Each agent is a CLI started with `Bun.spawn({ terminal })` (Bun's built-in PTY). A headless xterm mirrors every screen. That lets the server tell whether an agent is *idle*, *working* or *needs you* (an approval prompt is on screen). It also lets a browser that connects late replay the screen.
 - **A2A** (`src/server/a2a.ts`, `src/server/index.ts`). The portal is an A2A server that hosts every agent:
-  - `GET /.well-known/agent-card.json` is the entry persona's card. `GET /a2a/:agent/.well-known/agent-card.json` returns the card for any persona or session.
-  - `POST /a2a/:agent` is JSON-RPC 2.0: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`.
+  - `GET /.well-known/agent-card.json` is the Main team's entry persona. `GET /a2a/:team/:agent/.well-known/agent-card.json` returns the card for any persona or session.
+  - `POST /a2a/:team/:agent` is JSON-RPC 2.0: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`. `/a2a/:agent` means the Main team.
   - Tasks move through `submitted → working → input-required → completed | failed | canceled | rejected`, with history and artifacts.
   - Outside A2A clients can call it too. Agents identify themselves with a per-session bearer token.
 - **MCP bridge** (`src/mcp/a2a-mcp.ts`). This is how a CLI agent speaks A2A. Tools: `list_agents`, `send_message`, `check_inbox`, `update_task`, `get_task`, `wait_for_task`, `cancel_task`, `list_tasks`, plus `spawn_agent` / `stop_agent` for personas allowed to spawn.
@@ -125,7 +136,7 @@ Notes:
 
 ## Personas
 
-Open **Settings → Edit personas**. For each persona you can set:
+Open **Settings → Edit this team's personas**. For each persona you can set:
 
 - Name, sidebar code and color
 - Runtime (Claude Code, Codex or OpenCode) and model
@@ -161,7 +172,7 @@ You can also set YOLO per persona.
 | --- | --- | --- |
 | `AOS_PORT` / `AOS_HOST` | `4777` / `127.0.0.1` | Where the portal listens. It has no login of its own: keep it on localhost, or put it behind the Compose setup's Caddy. |
 | `AOS_PUBLIC_URL` | `http://127.0.0.1:4777` | The address outside A2A clients use, advertised in the agent cards. |
-| `AOS_WORKSPACE` | `./workspace` | Folder the agents work in (also editable in Settings). |
+| `AOS_WORKSPACE` | `./workspace` | Where new teams get their folders (`<root>/<team>`). Each team's folder can be changed in its settings. |
 | `AOS_DATA_DIR` | `./data` | SQLite database and per-session files (role prompt, MCP config, command). |
 | `AOS_CLAUDE_BIN`, `AOS_CODEX_BIN`, `AOS_OPENCODE_BIN` | found on `PATH` | CLI locations. |
 | `AOS_CLAUDE_ARGS`, `AOS_CODEX_ARGS`, `AOS_OPENCODE_ARGS` | | Extra flags for every session of that runtime. |

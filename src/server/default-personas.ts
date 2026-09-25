@@ -10,7 +10,8 @@ const base = {
   maxInstances: 3,
 } as const;
 
-export const DEFAULT_PERSONAS: Persona[] = [
+/** The starting team. teamId is filled in when a team is seeded from these. */
+export const DEFAULT_PERSONAS: Omit<Persona, "teamId">[] = [
   {
     ...base,
     id: "product-manager",

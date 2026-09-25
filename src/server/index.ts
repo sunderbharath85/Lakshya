@@ -1,8 +1,9 @@
 import { APP_NAME } from "../shared/brand";
 import index from "../web/index.html";
-import type { A2ATask, Persona, TaskState } from "../shared/types";
+import { join, resolve } from "node:path";
+import type { A2ATask, Persona, TaskState, Team } from "../shared/types";
 import { TERMINAL_STATES } from "../shared/types";
-import { A2AError, cancelTask, ERR, markUserRead, readInbox, sendMessage, updateTask, waitForTask, type Sender } from "./a2a";
+import { A2AError, assertVisible, cancelTask, ERR, markUserRead, readInbox, sendMessage, updateTask, waitForTask, type Sender } from "./a2a";
 import { EVENTS_TOPIC, onEvent, setPublisher, termTopic, emit } from "./bus";
 import { canTalk } from "./prompt";
 import { runtimeAvailability } from "./runtimes";
@@ -23,15 +24,21 @@ import {
 import {
   DATA_DIR,
   deletePersona,
+  deleteTeam,
   getPersona,
   getSettings,
   getTask,
+  getTeam,
   listPersonas,
   listTasks,
+  listTeams,
+  MAIN_TEAM,
   recentMessages,
   savePersona,
   saveSettings,
+  saveTeam,
   seedPersonas,
+  WORKSPACES_ROOT,
 } from "./store";
 
 const PORT = Number(process.env.AOS_PORT ?? 4777);
@@ -41,7 +48,6 @@ const PORTAL = `http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}`;
 /** Where outside A2A clients reach it, e.g. behind a reverse proxy. Used in agent cards. */
 const PUBLIC_URL = (process.env.AOS_PUBLIC_URL ?? PORTAL).replace(/\/$/, "");
 
-seedPersonas();
 configureSessions(PORTAL);
 startSupervisor();
 
@@ -77,11 +83,12 @@ async function guard(fn: () => Promise<Response> | Response): Promise<Response> 
 
 function agentCard(persona: Persona, sessionId?: string) {
   const id = sessionId ?? persona.id;
+  const team = getTeam(persona.teamId);
   return {
     protocolVersion: "0.3.0",
-    name: sessionId ? `${persona.name} (${sessionId})` : persona.name,
+    name: `${sessionId ? `${persona.name} (${sessionId})` : persona.name}, ${team?.name ?? persona.teamId} team`,
     description: `${persona.title}. ${persona.description}`,
-    url: `${PUBLIC_URL}/a2a/${id}`,
+    url: `${PUBLIC_URL}/a2a/${persona.teamId}/${id}`,
     preferredTransport: "JSONRPC",
     version: "1.0.0",
     provider: { organization: APP_NAME, url: PUBLIC_URL },
@@ -93,9 +100,29 @@ function agentCard(persona: Persona, sessionId?: string) {
   };
 }
 
-function entryPersona() {
-  return listPersonas().find((p) => p.entry) ?? listPersonas()[0]!;
+function entryPersona(team = MAIN_TEAM) {
+  const personas = listPersonas(team);
+  const p = personas.find((x) => x.entry) ?? personas[0];
+  if (!p) throw new A2AError(ERR.invalidParams, `Team "${team}" has no personas`);
+  return p;
 }
+
+const teamOr404 = (id: string) => {
+  const t = getTeam(id);
+  if (!t) throw new A2AError(ERR.taskNotFound, `No team "${id}"`);
+  return t;
+};
+
+/** "Mobile App" → "mobile-app", made unique among existing teams. */
+function teamSlug(name: string) {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "team";
+  let id = base;
+  for (let i = 2; getTeam(id); i++) id = `${base}-${i}`;
+  return id;
+}
+
+const emitPersonas = () => emit({ type: "personas", personas: listPersonas() });
+const emitTeams = () => emit({ type: "teams", teams: listTeams() });
 
 /** Shape a task for tools and A2A clients, trimming history when asked. */
 function taskView(task: A2ATask, historyLength?: number) {
@@ -108,14 +135,15 @@ function taskView(task: A2ATask, historyLength?: number) {
 
 type Rpc = { jsonrpc: "2.0"; id: string | number | null; method: string; params?: any };
 
-async function rpcResult(rpc: Rpc, sender: Sender, agentId: string | undefined) {
+async function rpcResult(rpc: Rpc, sender: Sender, agentId: string | undefined, team: string) {
   const p = rpc.params ?? {};
   switch (rpc.method) {
     case "message/send": {
       const m = p.message;
       if (!m?.parts) throw new A2AError(ERR.invalidParams, "params.message.parts is required");
       const task = await sendMessage(sender, {
-        to: m.taskId ? undefined : (agentId ?? entryPersona().id),
+        to: m.taskId ? undefined : (agentId ?? entryPersona(sender.kind === "session" ? sender.persona.teamId : team).id),
+        team,
         parts: m.parts,
         taskId: m.taskId,
         contextId: m.contextId,
@@ -123,11 +151,8 @@ async function rpcResult(rpc: Rpc, sender: Sender, agentId: string | undefined) 
       });
       return taskView(task, p.configuration?.historyLength);
     }
-    case "tasks/get": {
-      const t = getTask(p.id);
-      if (!t) throw new A2AError(ERR.taskNotFound, `Task ${p.id} not found`);
-      return taskView(t, p.historyLength);
-    }
+    case "tasks/get":
+      return taskView(assertVisible(sender, getTask(p.id), p.id), p.historyLength);
     case "tasks/cancel":
       return taskView(cancelTask(sender, p.id));
     default:
@@ -136,14 +161,14 @@ async function rpcResult(rpc: Rpc, sender: Sender, agentId: string | undefined) 
 }
 
 /** message/stream: SSE of the task, then status/artifact updates until it settles. */
-function rpcStream(rpc: Rpc, sender: Sender, agentId: string | undefined) {
+function rpcStream(rpc: Rpc, sender: Sender, agentId: string | undefined, team: string) {
   const enc = new TextEncoder();
   let off = () => {};
   const stream = new ReadableStream({
     async start(controller) {
       const send = (result: unknown) => controller.enqueue(enc.encode(`data: ${JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result })}\n\n`));
       try {
-        const task = (await rpcResult({ ...rpc, method: "message/send" }, sender, agentId)) as A2ATask;
+        const task = (await rpcResult({ ...rpc, method: "message/send" }, sender, agentId, team)) as A2ATask;
         send(task);
         off = onEvent((e) => {
           if (e.type !== "task" || e.task.id !== task.id) return;
@@ -172,20 +197,19 @@ function rpcStream(rpc: Rpc, sender: Sender, agentId: string | undefined) {
   return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }
 
-async function handleRpc(req: Request, agentId?: string) {
+/** JSON-RPC for one agent. Agents calling with their token always act within their own team. */
+async function handleRpc(req: Request, agentId?: string, team = MAIN_TEAM) {
   let rpc: Rpc;
   try {
     rpc = await req.json();
   } catch {
     return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
   }
-  if (agentId && agentId !== "user" && !getPersona(agentId) && !getSession(agentId)) {
-    return json({ jsonrpc: "2.0", id: rpc.id, error: { code: ERR.invalidParams, message: `No agent ${agentId}` } });
-  }
+  if (!getTeam(team)) return json({ jsonrpc: "2.0", id: rpc.id, error: { code: ERR.invalidParams, message: `No team ${team}` } });
   const sender = senderFrom(req);
-  if (rpc.method === "message/stream") return rpcStream(rpc, sender, agentId);
+  if (rpc.method === "message/stream") return rpcStream(rpc, sender, agentId, team);
   try {
-    return json({ jsonrpc: "2.0", id: rpc.id, result: await rpcResult(rpc, sender, agentId) });
+    return json({ jsonrpc: "2.0", id: rpc.id, result: await rpcResult(rpc, sender, agentId, team) });
   } catch (e) {
     const error = e instanceof A2AError ? { code: e.code, message: e.message } : { code: -32603, message: e instanceof Error ? e.message : String(e) };
     return json({ jsonrpc: "2.0", id: rpc.id, error });
@@ -194,22 +218,58 @@ async function handleRpc(req: Request, agentId?: string) {
 
 // ---------- directory (what an agent sees of its team) ----------
 
-function directory(me?: Extract<Sender, { kind: "session" }>) {
-  const sessions = listSessions().filter((s) => s.activity !== "exited");
-  const open = listTasks().filter((t) => !TERMINAL_STATES.includes(t.status.state));
-  return listPersonas().map((p) => ({
+function directory(me: Extract<Sender, { kind: "session" }>) {
+  const team = me.persona.teamId;
+  const sessions = listSessions().filter((s) => s.activity !== "exited" && s.teamId === team);
+  const open = listTasks(300, team).filter((t) => !TERMINAL_STATES.includes(t.status.state));
+  return listPersonas(team).map((p) => ({
     id: p.id,
     name: p.name,
     title: p.title,
     description: p.description,
     runtime: p.runtime,
-    canContact: me ? canTalk(me.persona, p.id) : true,
-    yourRole: me?.persona.id === p.id,
+    canContact: canTalk(me.persona, p.id),
+    yourRole: me.persona.id === p.id,
     maxInstances: p.maxInstances,
     sessions: sessions
       .filter((s) => s.personaId === p.id)
       .map((s) => ({ id: s.id, activity: s.activity, openTasks: open.filter((t) => t.metadata.to === s.id).length })),
   }));
+}
+
+// ---------- personas (per team) ----------
+
+async function createPersona(req: Request, teamId: string) {
+  teamOr404(teamId);
+  const p = { ...((await req.json()) as Persona), teamId };
+  if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(p.id ?? "")) return fail("Id must be 2-40 lowercase letters, digits or dashes");
+  if (getPersona(teamId, p.id)) return fail(`This team already has a persona with id "${p.id}"`, 409);
+  savePersona(p);
+  emitPersonas();
+  return json(p, 201);
+}
+
+async function updatePersona(req: Request, teamId: string, id: string) {
+  if (!getPersona(teamId, id)) return fail("No such persona", 404);
+  const p = { ...((await req.json()) as Persona), id, teamId };
+  // One entry persona per team.
+  if (p.entry) for (const other of listPersonas(teamId)) if (other.id !== p.id && other.entry) savePersona({ ...other, entry: false });
+  savePersona(p);
+  emitPersonas();
+  return json(p);
+}
+
+function removePersona(teamId: string, id: string) {
+  deletePersona(teamId, id);
+  emitPersonas();
+  return json({ ok: true });
+}
+
+function resetPersonas(teamId: string) {
+  teamOr404(teamId);
+  seedPersonas(teamId);
+  emitPersonas();
+  return json(listPersonas(teamId));
 }
 
 // ---------- server ----------
@@ -227,14 +287,21 @@ const server = Bun.serve({
     "/sessions/*": index,
 
     // ----- A2A discovery + JSON-RPC -----
-    "/.well-known/agent-card.json": () => json(agentCard(entryPersona())),
-    "/.well-known/agent.json": () => json(agentCard(entryPersona())),
+    // The main team's entry persona is the portal's front door; /a2a/<team>/<agent> reaches any team.
+    "/.well-known/agent-card.json": () => guard(() => json(agentCard(entryPersona()))),
+    "/.well-known/agent.json": () => guard(() => json(agentCard(entryPersona()))),
     "/a2a": { POST: (req) => handleRpc(req) },
     "/a2a/:agent": { POST: (req) => handleRpc(req, req.params.agent) },
+    "/a2a/:team/:agent": { POST: (req) => handleRpc(req, req.params.agent, req.params.team) },
     "/a2a/:agent/.well-known/agent-card.json": (req) => {
       const s = getSession(req.params.agent);
-      const p = getPersona(s?.personaId ?? req.params.agent);
+      const p = s ? getPersona(s.teamId, s.personaId) : getPersona(MAIN_TEAM, req.params.agent);
       return p ? json(agentCard(p, s?.id)) : fail("No such agent", 404);
+    },
+    "/a2a/:team/:agent/.well-known/agent-card.json": (req) => {
+      const s = getSession(req.params.agent) ?? getSession(`${req.params.team}.${req.params.agent}`);
+      const p = s?.teamId === req.params.team ? getPersona(s.teamId, s.personaId) : getPersona(req.params.team, req.params.agent);
+      return p ? json(agentCard(p, s?.teamId === req.params.team ? s.id : undefined)) : fail("No such agent", 404);
     },
     "/a2a-directory": () => json(listPersonas().map((p) => agentCard(p))),
 
@@ -257,7 +324,7 @@ const server = Bun.serve({
       guard(() => {
         const me = requireAgent(req);
         const scope = new URL(req.url).searchParams.get("scope") ?? "mine";
-        let tasks = listTasks().filter((t) => !TERMINAL_STATES.includes(t.status.state) || Date.now() - t.metadata.updatedAt < 3600_000);
+        let tasks = listTasks(300, me.persona.teamId).filter((t) => !TERMINAL_STATES.includes(t.status.state) || Date.now() - t.metadata.updatedAt < 3600_000);
         if (scope === "mine") tasks = tasks.filter((t) => t.metadata.to === me.id || t.metadata.from === me.id);
         else if (!me.persona.orchestrator) return fail("Only the orchestrator can list every task", 403);
         return json(tasks);
@@ -272,7 +339,7 @@ const server = Bun.serve({
     },
     "/api/agent/tasks/:id/wait": (req) =>
       guard(async () => {
-        requireAgent(req);
+        assertVisible(requireAgent(req), getTask(req.params.id, false), req.params.id);
         const timeout = Math.min(Number(new URL(req.url).searchParams.get("timeout") ?? 120), 840) * 1000;
         const t = await waitForTask(req.params.id, timeout);
         return t ? json(t) : fail(`Task ${req.params.id} not found`, 404);
@@ -284,7 +351,7 @@ const server = Bun.serve({
           if (!me.persona.canSpawn) return fail(`${me.persona.name} may not start sessions`, 403);
           const { persona } = (await req.json()) as { persona: string };
           if (!canTalk(me.persona, persona)) return fail(`${me.persona.name} may not work with ${persona}`, 403);
-          return json(await spawnSession(persona, me.id));
+          return json(await spawnSession(me.persona.teamId, persona, me.id));
         }),
     },
     "/api/agent/stop": {
@@ -292,17 +359,18 @@ const server = Bun.serve({
         guard(async () => {
           const me = requireAgent(req);
           const { session } = (await req.json()) as { session: string };
-          const target = getSession(session);
-          if (!target) return fail(`No session ${session}`, 404);
+          const target = getSession(session) ?? getSession(`${me.persona.teamId}.${session}`);
+          if (!target || target.teamId !== me.persona.teamId) return fail(`No session ${session} on your team`, 404);
           if (!me.persona.canSpawn && target.spawnedBy !== me.id) return fail("You can only stop sessions you started", 403);
           if (target.id === me.id) return fail("You cannot stop yourself", 400);
-          return json({ stopped: stopSession(session) });
+          return json({ stopped: stopSession(target.id) });
         }),
     },
 
     // ----- API used by the web UI -----
     "/api/state": () =>
       json({
+        teams: listTeams(),
         personas: listPersonas(),
         sessions: listSessions(),
         tasks: listTasks(),
@@ -311,46 +379,78 @@ const server = Bun.serve({
         runtimes: runtimeAvailability(),
       }),
     "/api/runtimes": () => json(runtimeAvailability()),
-    "/api/personas": {
-      GET: () => json(listPersonas()),
+
+    "/api/teams": {
+      GET: () => json(listTeams()),
       POST: (req) =>
         guard(async () => {
-          const p = (await req.json()) as Persona;
-          if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(p.id ?? "")) return fail("Id must be 2-40 lowercase letters, digits or dashes");
-          if (getPersona(p.id)) return fail(`A persona with id "${p.id}" already exists`, 409);
-          savePersona(p);
-          emit({ type: "personas", personas: listPersonas() });
-          return json(p, 201);
+          const body = (await req.json()) as { name?: string; workspaceDir?: string; copyFrom?: string };
+          const name = body.name?.trim();
+          if (!name) return fail("Give the team a name");
+          const id = teamSlug(name);
+          const source = body.copyFrom ? listPersonas(body.copyFrom) : undefined;
+          if (body.copyFrom && !source?.length) return fail(`No team "${body.copyFrom}" to copy personas from`);
+          const team: Team = { id, name, workspaceDir: resolve(body.workspaceDir?.trim() || join(WORKSPACES_ROOT, id)), createdAt: Date.now() };
+          saveTeam(team);
+          seedPersonas(id, source);
+          emitTeams();
+          emitPersonas();
+          return json(team, 201);
         }),
     },
-    "/api/personas/reset": {
-      POST: () => {
-        seedPersonas(true);
-        emit({ type: "personas", personas: listPersonas() });
-        return json(listPersonas());
-      },
-    },
-    "/api/personas/:id": {
+    "/api/teams/:team": {
       PUT: (req) =>
         guard(async () => {
-          if (!getPersona(req.params.id)) return fail("No such persona", 404);
-          const p = { ...((await req.json()) as Persona), id: req.params.id };
-          if (p.entry) for (const other of listPersonas()) if (other.id !== p.id && other.entry) savePersona({ ...other, entry: false });
-          savePersona(p);
-          emit({ type: "personas", personas: listPersonas() });
-          return json(p);
+          const team = teamOr404(req.params.team);
+          const body = (await req.json()) as { name?: string; workspaceDir?: string };
+          const next: Team = {
+            ...team,
+            name: body.name?.trim() || team.name,
+            workspaceDir: body.workspaceDir?.trim() ? resolve(body.workspaceDir.trim()) : team.workspaceDir,
+          };
+          saveTeam(next);
+          emitTeams();
+          return json(next);
         }),
-      DELETE: (req) => {
-        deletePersona(req.params.id);
-        emit({ type: "personas", personas: listPersonas() });
-        return json({ ok: true });
-      },
+      DELETE: (req) =>
+        guard(() => {
+          const team = teamOr404(req.params.team);
+          if (team.id === MAIN_TEAM) return fail("The main team can't be deleted. Rename it instead.");
+          if (listSessions().some((x) => x.teamId === team.id && x.activity !== "exited")) {
+            return fail(`Stop ${team.name}'s running agents first`, 409);
+          }
+          deleteTeam(team.id);
+          emitTeams();
+          emitPersonas();
+          return json({ ok: true, keptFolder: team.workspaceDir });
+        }),
     },
+
+    // Personas per team; /api/personas/* act on the main team.
+    "/api/teams/:team/personas": {
+      GET: (req) => guard(() => json(listPersonas(teamOr404(req.params.team).id))),
+      POST: (req) => guard(() => createPersona(req, req.params.team)),
+    },
+    "/api/teams/:team/personas/reset": { POST: (req) => guard(() => resetPersonas(req.params.team)) },
+    "/api/teams/:team/personas/:id": {
+      PUT: (req) => guard(() => updatePersona(req, req.params.team, req.params.id)),
+      DELETE: (req) => guard(() => removePersona(req.params.team, req.params.id)),
+    },
+    "/api/personas": {
+      GET: () => json(listPersonas(MAIN_TEAM)),
+      POST: (req) => guard(() => createPersona(req, MAIN_TEAM)),
+    },
+    "/api/personas/reset": { POST: () => guard(() => resetPersonas(MAIN_TEAM)) },
+    "/api/personas/:id": {
+      PUT: (req) => guard(() => updatePersona(req, MAIN_TEAM, req.params.id)),
+      DELETE: (req) => guard(() => removePersona(MAIN_TEAM, req.params.id)),
+    },
+
     "/api/sessions": {
       POST: (req) =>
         guard(async () => {
-          const { personaId } = (await req.json()) as { personaId: string };
-          return json(await spawnSession(personaId, "user"), 201);
+          const { personaId, team } = (await req.json()) as { personaId: string; team?: string };
+          return json(await spawnSession(team ?? MAIN_TEAM, personaId, "user"), 201);
         }),
     },
     "/api/sessions/:id": {
@@ -371,8 +471,9 @@ const server = Bun.serve({
     "/api/request": {
       POST: (req) =>
         guard(async () => {
-          const { text, to } = (await req.json()) as { text: string; to?: string };
-          const task = await sendMessage({ kind: "user" }, { to: to || entryPersona().id, parts: [{ kind: "text", text }] });
+          const { text, to, team = MAIN_TEAM } = (await req.json()) as { text: string; to?: string; team?: string };
+          teamOr404(team);
+          const task = await sendMessage({ kind: "user" }, { to: to || entryPersona(team).id, team, parts: [{ kind: "text", text }] });
           return json(task, 201);
         }),
     },
@@ -414,7 +515,7 @@ const server = Bun.serve({
     if (url.pathname === "/ws/events") {
       return server.upgrade(req, { data: { kind: "events" } }) ? undefined : fail("Upgrade failed");
     }
-    const m = url.pathname.match(/^\/ws\/term\/([\w-]+)$/);
+    const m = url.pathname.match(/^\/ws\/term\/([\w.-]+)$/);
     if (m) return server.upgrade(req, { data: { kind: "term", id: m[1]! } }) ? undefined : fail("Upgrade failed");
     return fail("Not found", 404);
   },

@@ -83,11 +83,27 @@ const claude: Runtime = {
   },
 };
 
+/**
+ * Codex asks "Trust this folder?" per project and ignores trust passed with -c, so where the deployment
+ * owns its folders (AOS_TRUST_WORKSPACE=1, set by the Docker image) record trust for each team's folder
+ * in Codex's config before starting it. Never done otherwise: it's the user's config to decide.
+ */
+async function trustForCodex(dir: string) {
+  if (process.env.AOS_TRUST_WORKSPACE !== "1") return;
+  const home = process.env.CODEX_HOME ?? `${homedir()}/.codex`;
+  const file = Bun.file(`${home}/config.toml`);
+  const current = (await file.exists()) ? await file.text() : "";
+  const header = `[projects.${JSON.stringify(dir)}]`;
+  if (current.includes(header)) return;
+  await Bun.write(file, `${current}${current.endsWith("\n") || !current ? "" : "\n"}\n${header}\ntrust_level = "trusted"\n`);
+}
+
 const codex: Runtime = {
   id: "codex",
   name: "Codex",
   binary: () => find("codex", ["~/.local/bin/codex", "/opt/homebrew/bin/codex"]),
   async build(ctx) {
+    await trustForCodex(ctx.cwd);
     const [command, ...args] = mcpCommand(ctx);
     const cmd = [
       codex.binary()!,

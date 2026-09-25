@@ -3,7 +3,7 @@ import { TERMINAL_STATES, textOf } from "../shared/types";
 import { emitLocal, onEvent } from "./bus";
 import { canTalk } from "./prompt";
 import { getSession, notify, onSessionExit, runningSessions, spawnSession } from "./sessions";
-import { getPersona, getTask, listPersonas, listTasks, markRead, newId, saveMessage, saveTask, unreadFor } from "./store";
+import { getPersona, getTask, getTeam, listPersonas, listTasks, MAIN_TEAM, markRead, newId, saveMessage, saveTask, unreadFor } from "./store";
 
 /** Who is calling: the human at the portal, an outside A2A client, or one of our agent sessions. */
 export type Sender = { kind: "user" } | { kind: "external" } | { kind: "session"; id: string; persona: Persona };
@@ -20,6 +20,22 @@ export const ERR = { invalidParams: -32602, methodNotFound: -32601, taskNotFound
 
 export const senderKey = (s: Sender) => (s.kind === "session" ? s.id : s.kind);
 
+/**
+ * Find a session by full id ("main.sde-2"), or by the short form agents tend to use ("sde-2")
+ * within their team.
+ */
+function lookupSession(to: string, team: string) {
+  return getSession(to) ?? (to.includes(".") ? undefined : getSession(`${team}.${to}`));
+}
+
+/** Agents only see their own team's tasks; to them, other teams' tasks don't exist. */
+export function assertVisible(sender: Sender, task: A2ATask | undefined, id: string): A2ATask {
+  if (!task || (sender.kind === "session" && task.metadata.team !== sender.persona.teamId)) {
+    throw new A2AError(ERR.taskNotFound, `Task ${id} not found`);
+  }
+  return task;
+}
+
 const currentContext = new Map<string, string>();
 
 /** First line of a message, cut at a word boundary. */
@@ -34,7 +50,7 @@ function label(key: string) {
   if (key === "user") return "the user";
   if (key === "external") return "an external A2A client";
   const s = getSession(key);
-  const p = s && getPersona(s.personaId);
+  const p = s && getPersona(s.teamId, s.personaId);
   return p ? `${p.name} (${key})` : key;
 }
 
@@ -71,28 +87,33 @@ function setState(task: A2ATask, state: TaskState, message?: A2AMessage) {
 }
 
 /** Pick the session that should receive a new task for a persona, starting one if needed. */
-async function resolveExecutor(to: string, sender: Sender, newSession: boolean): Promise<{ sessionId: string; persona: Persona | null }> {
+async function resolveExecutor(
+  to: string,
+  sender: Sender,
+  newSession: boolean,
+  team: string,
+): Promise<{ sessionId: string; persona: Persona | null }> {
   if (to === "user") {
     if (sender.kind !== "session") throw new A2AError(ERR.invalidParams, "Only agents can open tasks with the user");
     return { sessionId: "user", persona: null };
   }
-  const session = getSession(to);
+  const session = lookupSession(to, team);
   if (session) {
-    if (session.activity === "exited") throw new A2AError(ERR.invalidParams, `Session ${to} has exited. Message the persona "${session.personaId}" instead.`);
-    return { sessionId: session.id, persona: getPersona(session.personaId)! };
+    if (session.activity === "exited") throw new A2AError(ERR.invalidParams, `Session ${session.id} has exited. Message the persona "${session.personaId}" instead.`);
+    return { sessionId: session.id, persona: getPersona(session.teamId, session.personaId)! };
   }
-  const persona = getPersona(to);
+  const persona = getPersona(team, to);
   if (!persona) {
-    const ids = listPersonas().map((p) => p.id).join(", ");
-    throw new A2AError(ERR.invalidParams, `No agent "${to}". Personas: ${ids}, or a running session id.`);
+    const ids = listPersonas(team).map((p) => p.id).join(", ");
+    throw new A2AError(ERR.invalidParams, `No agent "${to}" on this team. Personas: ${ids}, or a running session id.`);
   }
-  const running = runningSessions(persona.id);
+  const running = runningSessions(team, persona.id);
   const spawnedBy = senderKey(sender);
   if (running.length === 0 || (newSession && running.length < persona.maxInstances)) {
     if (newSession && sender.kind === "session" && !sender.persona.canSpawn) {
       throw new A2AError(ERR.forbidden, `${sender.persona.name} may not start new sessions (canSpawn is off)`);
     }
-    const s = await spawnSession(persona.id, spawnedBy);
+    const s = await spawnSession(team, persona.id, spawnedBy);
     return { sessionId: s.id, persona };
   }
   // Least busy running session.
@@ -104,6 +125,8 @@ async function resolveExecutor(to: string, sender: Sender, newSession: boolean):
 
 export interface SendParams {
   to?: string;
+  /** Team for a new task from the user or an outside client. An agent always works in its own team. */
+  team?: string;
   parts: Part[];
   taskId?: string;
   contextId?: string;
@@ -116,8 +139,7 @@ export async function sendMessage(sender: Sender, p: SendParams): Promise<A2ATas
 
   // Follow-up on an existing task.
   if (p.taskId) {
-    const task = getTask(p.taskId, false);
-    if (!task) throw new A2AError(ERR.taskNotFound, `Task ${p.taskId} not found`);
+    const task = assertVisible(sender, getTask(p.taskId, false), p.taskId);
     if (TERMINAL_STATES.includes(task.status.state)) {
       throw new A2AError(ERR.notCancelable, `Task ${task.id} is ${task.status.state}. Open a new task (same context_id ${task.contextId}) instead.`);
     }
@@ -142,23 +164,32 @@ export async function sendMessage(sender: Sender, p: SendParams): Promise<A2ATas
   }
 
   if (!p.to) throw new A2AError(ERR.invalidParams, "Say who the message is for (to)");
+  let team = sender.kind === "session" ? sender.persona.teamId : (p.team ?? MAIN_TEAM);
+  const targetSession = lookupSession(p.to, team);
   if (sender.kind === "session") {
-    const target = getSession(p.to)?.personaId ?? p.to;
+    if (targetSession && targetSession.teamId !== team) {
+      throw new A2AError(ERR.forbidden, `${targetSession.id} is on another team. You can only work with your own team.`);
+    }
+    const target = targetSession?.personaId ?? p.to;
     if (target !== "user" && !canTalk(sender.persona, target)) {
       throw new A2AError(ERR.forbidden, `${sender.persona.name} is not allowed to contact ${target}. Allowed: ${sender.persona.canTalkTo.join(", ")}`);
     }
+  } else if (targetSession) {
+    team = targetSession.teamId; // the user can reach any team's sessions directly
   }
-  const { sessionId, persona } = await resolveExecutor(p.to, sender, !!p.newSession);
+  if (!getTeam(team)) throw new A2AError(ERR.invalidParams, `No team "${team}"`);
+  const { sessionId, persona } = await resolveExecutor(p.to, sender, !!p.newSession, team);
   const text = textOf(p.parts).trim();
   const now = Date.now();
   const task: A2ATask = {
     kind: "task",
     id: newId("task"),
-    contextId: p.contextId ?? currentContext.get(me) ?? newId("ctx"),
+    contextId: p.contextId ?? currentContext.get(sender.kind === "session" ? me : `${me}@${team}`) ?? newId("ctx"),
     status: { state: "submitted", timestamp: new Date(now).toISOString() },
     artifacts: [],
     metadata: {
       title: titleOf(text),
+      team,
       from: me,
       to: sessionId,
       toPersona: persona?.id ?? "user",
@@ -166,7 +197,7 @@ export async function sendMessage(sender: Sender, p: SendParams): Promise<A2ATas
       updatedAt: now,
     },
   };
-  if (sender.kind !== "session") currentContext.set(me, task.contextId);
+  if (sender.kind !== "session") currentContext.set(`${me}@${team}`, task.contextId);
   saveTask(task);
   const msg = makeMessage(task, me, sessionId, "user", p.parts);
   deliver(task, msg, sessionId, `New task from ${label(me)}.`);
@@ -201,8 +232,7 @@ export function updateTask(sender: Sender, taskId: string, state: TaskState, tex
 
 export function cancelTask(sender: Sender, taskId: string): A2ATask {
   const me = senderKey(sender);
-  const task = getTask(taskId, false);
-  if (!task) throw new A2AError(ERR.taskNotFound, `Task ${taskId} not found`);
+  const task = assertVisible(sender, getTask(taskId, false), taskId);
   if (TERMINAL_STATES.includes(task.status.state)) throw new A2AError(ERR.notCancelable, `Task ${taskId} is already ${task.status.state}`);
   if (me !== task.metadata.from && sender.kind !== "user" && !(sender.kind === "session" && sender.persona.orchestrator)) {
     throw new A2AError(ERR.forbidden, `Only the requester can cancel task ${taskId}`);

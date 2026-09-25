@@ -45,7 +45,8 @@ ENV NODE_ENV=production \
     AOS_PORT=4777 \
     AOS_DATA_DIR=/data \
     AOS_WORKSPACE=/workspace \
-    DISABLE_AUTOUPDATER=1
+    DISABLE_AUTOUPDATER=1 \
+    AOS_TRUST_WORKSPACE=1
 
 RUN mkdir -p /data /workspace && chown bun:bun /data /workspace
 # Claude Code refuses YOLO mode as root, and agents should not run as root anyway.

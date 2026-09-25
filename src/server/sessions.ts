@@ -1,3 +1,4 @@
+import { APP_NAME } from "../shared/brand";
 import { mkdirSync } from "node:fs";
 import { Terminal as Screen } from "@xterm/headless";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -5,7 +6,7 @@ import type { Activity, Persona, SessionInfo } from "../shared/types";
 import { emit, publishTerminal } from "./bus";
 import { buildSystemPrompt } from "./prompt";
 import { RUNTIMES } from "./runtimes";
-import { DATA_DIR, getPersona, getSettings, listStoredSessions, saveSession } from "./store";
+import { DATA_DIR, getPersona, getSettings, getTeam, listStoredSessions, saveSession } from "./store";
 
 const COLS = 120;
 const ROWS = 36;
@@ -80,8 +81,11 @@ export function getSession(id: string): SessionInfo | undefined {
   return live.get(id)?.info ?? listStoredSessions().find((s) => s.id === id);
 }
 
-export function runningSessions(personaId?: string): SessionInfo[] {
-  return [...live.values()].map((l) => l.info).filter((s) => s.activity !== "exited" && (!personaId || s.personaId === personaId));
+/** Running sessions, optionally only one team's, or one persona's within a team. */
+export function runningSessions(teamId?: string, personaId?: string): SessionInfo[] {
+  return [...live.values()]
+    .map((l) => l.info)
+    .filter((s) => s.activity !== "exited" && (!teamId || s.teamId === teamId) && (!personaId || s.personaId === personaId));
 }
 
 /**
@@ -99,17 +103,21 @@ function agentEnv() {
   return env;
 }
 
-function nextSessionId(personaId: string) {
+/** "<team>.<persona>-<n>": unique across teams, and still readable for agents addressing a teammate. */
+function nextSessionId(teamId: string, personaId: string) {
+  const prefix = `${teamId}.${personaId}-`;
   const used = listStoredSessions()
-    .filter((s) => s.personaId === personaId)
-    .map((s) => Number(s.id.slice(personaId.length + 1)) || 0);
-  return `${personaId}-${Math.max(0, ...used) + 1}`;
+    .filter((s) => s.id.startsWith(prefix))
+    .map((s) => Number(s.id.slice(prefix.length)) || 0);
+  return `${prefix}${Math.max(0, ...used) + 1}`;
 }
 
-export async function spawnSession(personaId: string, spawnedBy: string): Promise<SessionInfo> {
-  const persona = getPersona(personaId);
-  if (!persona) throw new Error(`Unknown persona "${personaId}"`);
-  const running = runningSessions(personaId);
+export async function spawnSession(teamId: string, personaId: string, spawnedBy: string): Promise<SessionInfo> {
+  const team = getTeam(teamId);
+  if (!team) throw new Error(`Unknown team "${teamId}"`);
+  const persona = getPersona(teamId, personaId);
+  if (!persona) throw new Error(`${team.name} has no persona "${personaId}"`);
+  const running = runningSessions(teamId, personaId);
   if (running.length >= persona.maxInstances) {
     throw new Error(`${persona.name} already has ${running.length} of ${persona.maxInstances} sessions running`);
   }
@@ -117,13 +125,13 @@ export async function spawnSession(personaId: string, spawnedBy: string): Promis
   if (!runtime?.binary()) throw new Error(`${runtime?.name ?? persona.runtime} is not installed (set AOS_${persona.runtime.toUpperCase()}_BIN)`);
 
   const settings = getSettings();
-  const cwd = settings.workspaceDir;
+  const cwd = team.workspaceDir;
   mkdirSync(cwd, { recursive: true });
-  const id = nextSessionId(personaId);
+  const id = nextSessionId(teamId, personaId);
   const sessionDir = `${DATA_DIR}/sessions/${id}`;
   mkdirSync(sessionDir, { recursive: true });
   const token = crypto.randomUUID();
-  const systemPrompt = buildSystemPrompt(persona, id, cwd);
+  const systemPrompt = buildSystemPrompt(team, persona, id);
   const systemPromptFile = `${sessionDir}/role.md`;
   await Bun.write(systemPromptFile, systemPrompt);
   const permissionMode = settings.yoloAll ? "yolo" : persona.permissionMode;
@@ -143,8 +151,9 @@ export async function spawnSession(personaId: string, spawnedBy: string): Promis
 
   const info: SessionInfo = {
     id,
+    teamId,
     personaId,
-    label: `${persona.name} ${id.slice(personaId.length + 1)}`,
+    label: `${persona.name} ${id.split("-").at(-1)}`,
     runtime: persona.runtime,
     cwd,
     activity: "starting",
@@ -177,7 +186,7 @@ export async function spawnSession(personaId: string, spawnedBy: string): Promis
       l.info = { ...l.info, activity: "exited", endedAt: Date.now(), exitCode, pendingDeliveries: 0 };
       saveSession(l.info);
       emit({ type: "session", session: l.info });
-      const msg = `\r\n\x1b[2m[agentic-os] session exited with code ${exitCode}\x1b[0m\r\n`;
+      const msg = `\r\n\x1b[2m[${APP_NAME}] session exited with code ${exitCode}\x1b[0m\r\n`;
       l.screen.write(msg);
       publishTerminal(id, new TextEncoder().encode(msg));
       for (const h of exitHandlers) h(l.info);
@@ -300,5 +309,5 @@ function tick() {
 
 export function personaOf(sessionId: string): Persona | undefined {
   const s = getSession(sessionId);
-  return s ? getPersona(s.personaId) : undefined;
+  return s ? getPersona(s.teamId, s.personaId) : undefined;
 }
