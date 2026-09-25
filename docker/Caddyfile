@@ -8,6 +8,9 @@
 	basic_auth {
 		{$LAKSHYA_USER:admin} {$LAKSHYA_PASSWORD_HASH}
 	}
+	# One line per request in the container log, so you can see traffic arrive. Caddy leaves
+	# Authorization and Cookie values out of access logs unless log_credentials is set.
+	log
 	# Terminals and events are WebSockets and A2A streaming is SSE: Caddy proxies both as-is.
 	reverse_proxy lakshya:4777 {
 		flush_interval -1
