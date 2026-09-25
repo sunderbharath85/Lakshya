@@ -1,0 +1,7 @@
+# Publish the password-protected portal on a port of this host (plain HTTP; prefer compose.https.yaml
+# with a domain for anything reachable from the internet):
+#   docker compose -f compose.server.yaml -f docker/compose.port.yaml up -d
+services:
+  caddy:
+    ports:
+      - "${LAKSHYA_BIND:-127.0.0.1}:${LAKSHYA_PORT:-8080}:8080"

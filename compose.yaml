@@ -1,6 +1,7 @@
-# docker compose up -d --build   →   http://localhost:8080 (user and password from .env)
-# The host port is published by compose.override.yaml, which `docker compose up` loads automatically.
-# Platforms that route through their own proxy (Dokploy, Coolify) deploy this file alone. See README.
+# Local use:  docker compose up -d --build   →   http://localhost:4777 (no password)
+#
+# Only this machine can reach it (bound to 127.0.0.1), like `bun dev`. To run it anywhere others can
+# reach, use compose.server.yaml, which puts Caddy with basic auth in front. See README.
 name: lakshya
 
 services:
@@ -10,7 +11,7 @@ services:
     init: true # reaps the processes agents leave behind
     restart: unless-stopped
     environment:
-      AOS_PUBLIC_URL: ${LAKSHYA_PUBLIC_URL:-http://localhost:8080}
+      AOS_PUBLIC_URL: ${LAKSHYA_PUBLIC_URL:-http://localhost:${LAKSHYA_PORT:-4777}}
       # Agent credentials. Any that are empty can be set up later by logging in inside the container.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
@@ -20,35 +21,11 @@ services:
     volumes:
       - lakshya-data:/data # database, per-session files
       - lakshya-home:/home/bun # CLI logins and settings (~/.claude, ~/.codex, opencode)
-      - ${LAKSHYA_WORKSPACE:-./workspace}:/workspace # the code the agents write
-    expose:
-      - "4777" # reachable only through caddy
-
-  caddy:
-    build:
-      context: docker
-      dockerfile: caddy.Dockerfile
-    image: lakshya-caddy:latest
-    restart: unless-stopped
-    depends_on:
-      lakshya:
-        condition: service_healthy
-    expose:
-      - "8080"
-    environment:
-      LAKSHYA_SITE: ${LAKSHYA_SITE:-:8080}
-      LAKSHYA_USER: ${LAKSHYA_USER:-admin}
-      LAKSHYA_PASSWORD: ${LAKSHYA_PASSWORD:?Set LAKSHYA_PASSWORD in .env (see .env.example)}
-    # Hash the password at startup so .env holds the plain value, and keep the plain value out of Caddy's env.
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - export LAKSHYA_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$LAKSHYA_PASSWORD")" && unset LAKSHYA_PASSWORD && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-    volumes:
-      - caddy-data:/data
-      - caddy-config:/config
+      - ${LAKSHYA_WORKSPACE:-./workspace}:/workspace # the code the agents write, one folder per team
+    ports:
+      # No password on this port, so it stays on loopback. Don't change 127.0.0.1: use compose.server.yaml.
+      - "127.0.0.1:${LAKSHYA_PORT:-4777}:4777"
 
 volumes:
   lakshya-data:
   lakshya-home:
-  caddy-data:
-  caddy-config:

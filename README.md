@@ -35,29 +35,38 @@ Session ids carry the team (`mobile-app.sde-1`); the UI and agents can use the s
 
 ## Run with Docker Compose
 
+**On your own machine** there's no password and no proxy, just the portal, reachable only from this machine:
+
 ```sh
-cp .env.example .env         # set LAKSHYA_PASSWORD (required) and any agent credentials
-docker compose up -d --build # http://localhost:8080, log in with LAKSHYA_USER / LAKSHYA_PASSWORD
+docker compose up -d --build   # http://localhost:4777
 ```
 
-Locally, `compose.override.yaml` (loaded automatically) publishes Caddy on `127.0.0.1:8080`.
+Put agent credentials in a `.env` file if you have them (see `.env.example`), or log in inside the container (below). Use `LAKSHYA_PORT` for another port.
 
-Two containers:
+**On a server, or anything others can reach**, use `compose.server.yaml`. It puts Caddy with basic auth in front, and refuses to start without a password:
+
+```sh
+cp .env.example .env                                    # set LAKSHYA_PASSWORD
+docker compose -f compose.server.yaml -f docker/compose.https.yaml up -d --build   # HTTPS on your domain
+```
+
+Two containers in the server setup:
 
 - **`lakshya`**: the portal, plus Claude Code, Codex and OpenCode.
   - Runs as a non-root user. Claude Code refuses YOLO mode as root.
   - Its port is not published. Only Caddy can reach it.
 - **`caddy`**: basic auth in front of everything, including the API, the terminal and event WebSockets, and the A2A endpoints.
   - You put a plain password in `.env`; Caddy hashes it at startup.
-  - `docker compose up` refuses to start without one.
 
-Agents inside the container reach the portal directly on 127.0.0.1 with their own session tokens, so they never go through auth.
+Either way, agents inside the container reach the portal directly on 127.0.0.1 with their own session tokens.
 
 | Volume | Holds |
 | --- | --- |
 | `lakshya-data` | The database and per-session files. |
 | `lakshya-home` | CLI logins and settings (`~/.claude`, `~/.codex`, OpenCode). |
 | `./workspace` → `/workspace` | The code the agents write, one folder per team (`/workspace/main`, …). Change it with `LAKSHYA_WORKSPACE`. |
+
+Both setups use the same volumes, so moving from local to server on one machine keeps your teams, history and logins.
 
 **Agent logins.** Set these in `.env`, or log in once inside the container; logins persist in `lakshya-home`.
 
@@ -75,11 +84,13 @@ An agent without credentials shows up as **Needs you** ("Not logged in").
 - marks `/workspace` as trusted for Claude Code, which covers every team folder under it; the server adds Codex trust for each team's folder when it starts a Codex agent. Either way agents don't stop at a "trust this folder?" menu (set `AOS_TRUST_WORKSPACE=0` to answer those yourself);
 - sets a git identity so agents can commit.
 
-**HTTPS.** Basic auth over plain HTTP sends the password in the clear, so use HTTPS for anything beyond localhost:
+**HTTPS (server setup).** Basic auth over plain HTTP sends the password in the clear, so use HTTPS for anything beyond your own machine:
 
 1. Point a domain at the host.
 2. In `.env`, set `LAKSHYA_SITE=your.domain` and `LAKSHYA_PUBLIC_URL=https://your.domain`.
-3. Run `docker compose -f compose.yaml -f docker/compose.https.yaml up -d`. Caddy gets a certificate automatically.
+3. Run `docker compose -f compose.server.yaml -f docker/compose.https.yaml up -d`. Caddy gets a certificate automatically.
+
+Without a domain, `-f docker/compose.port.yaml` in place of the HTTPS file publishes Caddy on `127.0.0.1:8080`. Set `LAKSHYA_BIND` to open it wider, over plain HTTP.
 
 **Build options.**
 
@@ -123,9 +134,9 @@ Tips:
 
 ## Deploy on Dokploy
 
-Dokploy deploys the Compose file straight from this repo. Its Traefik handles your domain and HTTPS, and our Caddy still does basic auth behind it.
+Dokploy deploys the server Compose file straight from this repo. Its Traefik handles your domain and HTTPS, and our Caddy still does basic auth behind it.
 
-1. **Create → Compose**. Set the provider to this Git repo, branch `main`, and the compose path to `./compose.yaml`.
+1. **Create → Compose**. Set the provider to this Git repo, branch `main`, and the compose path to `./compose.server.yaml`.
 2. **Environment**. At minimum:
    ```
    LAKSHYA_PASSWORD=<a long random password>
@@ -142,7 +153,7 @@ Dokploy deploys the Compose file straight from this repo. Its Traefik handles yo
 4. **Deploy.** Open the domain and log in with `LAKSHYA_USER` (default `admin`) and your password.
 
 Notes:
-- **Nothing is published on the host.** Dokploy runs `compose.yaml` alone, so the `compose.override.yaml` port mapping isn't loaded. Traefik reaches Caddy over Dokploy's network.
+- **Nothing is published on the host.** `compose.server.yaml` publishes no ports; Traefik reaches Caddy over Dokploy's network.
 - **The first deploy builds both images on the server.** Expect a few minutes; the Lakshya image is about 2.3 GB, mostly the agent CLIs.
 - **Logins made inside the container** (`claude` `/login`, `codex login --device-auth`) are kept in the `lakshya-home` volume, so they survive redeploys. Run them from Dokploy's terminal for the `lakshya` container.
 - **Backups.** Dokploy's volume backups work on `lakshya-data` (tasks, personas, history) and `lakshya-home`.

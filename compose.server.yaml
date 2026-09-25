@@ -1,0 +1,49 @@
+# Servers and platforms (Dokploy, Coolify, a VPS): Lakshya behind Caddy with basic auth.
+#
+#   docker compose -f compose.server.yaml up -d --build
+#
+# The portal can run commands on this machine (in YOLO mode without asking), so it is only ever
+# reachable through Caddy, and this refuses to start without LAKSHYA_PASSWORD. On a platform with its
+# own proxy, point the domain at service `caddy`, port 8080. On a plain server, publish Caddy with
+# docker/compose.https.yaml (HTTPS on your domain) or docker/compose.port.yaml (a port on this host).
+name: lakshya
+
+services:
+  lakshya:
+    extends:
+      file: compose.yaml
+      service: lakshya
+    environment:
+      AOS_PUBLIC_URL: ${LAKSHYA_PUBLIC_URL:-http://localhost:8080}
+    ports: !reset []
+    expose:
+      - "4777" # reachable only through caddy
+
+  caddy:
+    build:
+      context: docker
+      dockerfile: caddy.Dockerfile
+    image: lakshya-caddy:latest
+    restart: unless-stopped
+    depends_on:
+      lakshya:
+        condition: service_healthy
+    expose:
+      - "8080"
+    environment:
+      LAKSHYA_SITE: ${LAKSHYA_SITE:-:8080}
+      LAKSHYA_USER: ${LAKSHYA_USER:-admin}
+      LAKSHYA_PASSWORD: ${LAKSHYA_PASSWORD:?Set LAKSHYA_PASSWORD in .env (see .env.example)}
+    # Hash the password at startup so .env holds the plain value, and keep the plain value out of Caddy's env.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - export LAKSHYA_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$LAKSHYA_PASSWORD")" && unset LAKSHYA_PASSWORD && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  lakshya-data:
+  lakshya-home:
+  caddy-data:
+  caddy-config:
