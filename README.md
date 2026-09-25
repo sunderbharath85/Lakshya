@@ -20,6 +20,59 @@ bun dev            # http://127.0.0.1:4777
 
 Type a request in the bar at the bottom. The Product Manager picks it up, writes a brief and hands it to the Project Manager. The Project Manager splits the work, starts engineer and QA sessions, and tracks each task to done. Every agent appears in the sidebar as a terminal you can watch and type into. Tasks and their full A2A history are in the **Tasks** flyout.
 
+## Run with Docker Compose
+
+```sh
+cp .env.example .env         # set LAKSHYA_PASSWORD (required) and any agent credentials
+docker compose up -d --build # http://localhost:8080, log in with LAKSHYA_USER / LAKSHYA_PASSWORD
+```
+
+Two containers:
+
+- **`lakshya`**: the portal, plus Claude Code, Codex and OpenCode.
+  - Runs as a non-root user. Claude Code refuses YOLO mode as root.
+  - Its port is not published. Only Caddy can reach it.
+- **`caddy`**: basic auth in front of everything, including the API, the terminal and event WebSockets, and the A2A endpoints.
+  - You put a plain password in `.env`; Caddy hashes it at startup.
+  - `docker compose up` refuses to start without one.
+
+Agents inside the container reach the portal directly on 127.0.0.1 with their own session tokens, so they never go through auth.
+
+| Volume | Holds |
+| --- | --- |
+| `lakshya-data` | The database and per-session files. |
+| `lakshya-home` | CLI logins and settings (`~/.claude`, `~/.codex`, OpenCode). |
+| `./workspace` → `/workspace` | The code the agents write. Change it with `LAKSHYA_WORKSPACE`. |
+
+**Agent logins.** Set these in `.env`, or log in once inside the container; logins persist in `lakshya-home`.
+
+| Agent | In `.env` | Or log in inside the container |
+| --- | --- | --- |
+| Claude Code | `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_OAUTH_TOKEN` (for a subscription, create one with `claude setup-token` on any machine) | `docker compose exec -it lakshya claude`, then `/login` |
+| Codex | `OPENAI_API_KEY` | `docker compose exec -it lakshya codex login --device-auth` (ChatGPT plan) |
+| OpenCode | provider keys | `docker compose exec -it lakshya opencode auth login`; its free models work with no login |
+
+An agent without credentials shows up as **Needs you** ("Not logged in").
+
+**On first start**, the entrypoint:
+
+- skips Claude Code's first-run onboarding;
+- marks `/workspace` as trusted for Claude Code and Codex, so agents don't stop at a "trust this folder?" menu (set `AOS_TRUST_WORKSPACE=0` to answer those yourself);
+- sets a git identity so agents can commit.
+
+**HTTPS.** Basic auth over plain HTTP sends the password in the clear, so use HTTPS for anything beyond localhost:
+
+1. Point a domain at the host.
+2. In `.env`, set `LAKSHYA_SITE=your.domain` and `LAKSHYA_PUBLIC_URL=https://your.domain`.
+3. Run `docker compose -f compose.yaml -f docker/compose.https.yaml up -d`. Caddy gets a certificate automatically.
+
+**Build options.**
+
+- Pin the CLI versions: `docker compose build --build-arg CLAUDE_CODE_VERSION=2.1.282 --build-arg CODEX_VERSION=0.157.0 --build-arg OPENCODE_VERSION=1.18.32`.
+- Leave a CLI out with `none`.
+
+Redeploying restarts the container, which ends every running agent session. Tasks and history stay.
+
 ## How it works
 
 ```
@@ -77,7 +130,8 @@ You can also set YOLO per persona.
 
 | Env | Default | |
 | --- | --- | --- |
-| `AOS_PORT` / `AOS_HOST` | `4777` / `127.0.0.1` | Where the portal listens. It has no login, so keep it on localhost. |
+| `AOS_PORT` / `AOS_HOST` | `4777` / `127.0.0.1` | Where the portal listens. It has no login of its own: keep it on localhost, or put it behind the Compose setup's Caddy. |
+| `AOS_PUBLIC_URL` | `http://127.0.0.1:4777` | The address outside A2A clients use, advertised in the agent cards. |
 | `AOS_WORKSPACE` | `./workspace` | Folder the agents work in (also editable in Settings). |
 | `AOS_DATA_DIR` | `./data` | SQLite database and per-session files (role prompt, MCP config, command). |
 | `AOS_CLAUDE_BIN`, `AOS_CODEX_BIN`, `AOS_OPENCODE_BIN` | found on `PATH` | CLI locations. |

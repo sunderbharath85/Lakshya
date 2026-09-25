@@ -1,0 +1,12 @@
+node_modules
+data
+workspace
+.git
+.env
+.env.*
+!.env.example
+docs
+test
+scripts
+.playwright-mcp
+*.md

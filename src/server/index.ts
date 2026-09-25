@@ -36,7 +36,10 @@ import {
 
 const PORT = Number(process.env.AOS_PORT ?? 4777);
 const HOST = process.env.AOS_HOST ?? "127.0.0.1";
+/** Where agents inside this machine reach the portal. */
 const PORTAL = `http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}`;
+/** Where outside A2A clients reach it, e.g. behind a reverse proxy. Used in agent cards. */
+const PUBLIC_URL = (process.env.AOS_PUBLIC_URL ?? PORTAL).replace(/\/$/, "");
 
 seedPersonas();
 configureSessions(PORTAL);
@@ -78,10 +81,10 @@ function agentCard(persona: Persona, sessionId?: string) {
     protocolVersion: "0.3.0",
     name: sessionId ? `${persona.name} (${sessionId})` : persona.name,
     description: `${persona.title}. ${persona.description}`,
-    url: `${PORTAL}/a2a/${id}`,
+    url: `${PUBLIC_URL}/a2a/${id}`,
     preferredTransport: "JSONRPC",
     version: "1.0.0",
-    provider: { organization: APP_NAME, url: PORTAL },
+    provider: { organization: APP_NAME, url: PUBLIC_URL },
     capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
     defaultInputModes: ["text/plain"],
     defaultOutputModes: ["text/plain"],
@@ -220,6 +223,7 @@ const server = Bun.serve({
   idleTimeout: 0,
   routes: {
     "/": index,
+    "/healthz": () => new Response("ok"),
     "/sessions/*": index,
 
     // ----- A2A discovery + JSON-RPC -----

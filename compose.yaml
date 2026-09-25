@@ -1,0 +1,50 @@
+# docker compose up -d --build   →   http://localhost:8080 (user and password from .env)
+name: lakshya
+
+services:
+  lakshya:
+    build: .
+    image: lakshya:latest
+    init: true # reaps the processes agents leave behind
+    restart: unless-stopped
+    environment:
+      AOS_PUBLIC_URL: ${LAKSHYA_PUBLIC_URL:-http://localhost:8080}
+      # Agent credentials. Any that are empty can be set up later by logging in inside the container.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-}
+    volumes:
+      - lakshya-data:/data # database, per-session files
+      - lakshya-home:/home/bun # CLI logins and settings (~/.claude, ~/.codex, opencode)
+      - ${LAKSHYA_WORKSPACE:-./workspace}:/workspace # the code the agents write
+    expose:
+      - "4777" # reachable only through caddy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      lakshya:
+        condition: service_healthy
+    ports:
+      - "${LAKSHYA_BIND:-127.0.0.1}:${LAKSHYA_PORT:-8080}:8080"
+    environment:
+      LAKSHYA_SITE: ${LAKSHYA_SITE:-:8080}
+      LAKSHYA_USER: ${LAKSHYA_USER:-admin}
+      LAKSHYA_PASSWORD: ${LAKSHYA_PASSWORD:?Set LAKSHYA_PASSWORD in .env (see .env.example)}
+    # Hash the password at startup so .env holds the plain value, and keep the plain value out of Caddy's env.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - export LAKSHYA_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$LAKSHYA_PASSWORD")" && unset LAKSHYA_PASSWORD && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  lakshya-data:
+  lakshya-home:
+  caddy-data:
+  caddy-config:

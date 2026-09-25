@@ -1,0 +1,8 @@
+# HTTPS on a domain: set LAKSHYA_SITE=your.domain in .env, point the domain's DNS at this host, then
+#   docker compose -f compose.yaml -f docker/compose.https.yaml up -d
+services:
+  caddy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"

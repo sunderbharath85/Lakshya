@@ -1,0 +1,15 @@
+# Basic auth in front of Lakshya. The portal can run commands on this machine (and in YOLO mode,
+# without asking), so it is never published without a password.
+#
+# LAKSHYA_SITE ":8080" serves plain HTTP on port 8080. Set it to a domain (lakshya.example.com)
+# and Caddy fetches a TLS certificate and serves HTTPS, which you want for anything past localhost:
+# basic auth over plain HTTP sends the password in the clear.
+{$LAKSHYA_SITE::8080} {
+	basic_auth {
+		{$LAKSHYA_USER:admin} {$LAKSHYA_PASSWORD_HASH}
+	}
+	# Terminals and events are WebSockets and A2A streaming is SSE: Caddy proxies both as-is.
+	reverse_proxy lakshya:4777 {
+		flush_interval -1
+	}
+}
