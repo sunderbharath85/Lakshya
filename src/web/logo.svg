@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>Lakshya</title>
+  <rect width="32" height="32" fill="#121212"/>
+  <!-- the target; the red eye is Lakshya, the only thing the archer sees -->
+  <circle cx="21" cy="16" r="8.25" fill="none" stroke="#e6e6e6" stroke-width="2.5"/>
+  <circle cx="21" cy="16" r="3.25" fill="#ff5f57"/>
+  <!-- the arrow, buried in the eye -->
+  <path d="M3 16 H17.5" stroke="#e6e6e6" stroke-width="2.5"/>
+  <path d="M3.5 12 L6.5 16 L3.5 20 M7.5 12 L10.5 16 L7.5 20" fill="none" stroke="#e6e6e6" stroke-width="2"/>
+</svg>
