@@ -51,7 +51,7 @@ export function useLive(): LiveState | null {
     let retry: ReturnType<typeof setTimeout>;
     const connect = async () => {
       try {
-        const snap = await fetch("/api/state").then((r) => r.json());
+        const snap = await fetch(apiUrl("/api/state")).then((r) => r.json());
         setState({ ...snap, connected: true });
       } catch {
         retry = setTimeout(connect, 1500);
@@ -74,8 +74,14 @@ export function useLive(): LiveState | null {
   return state;
 }
 
+/**
+ * Absolute API URL. A page opened as http://user:pass@host/ keeps the credentials in its base URL,
+ * and Chrome then refuses every relative fetch; location.origin never carries them.
+ */
+export const apiUrl = (path: string) => `${location.origin}${path}`;
+
 export async function api<T = any>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,

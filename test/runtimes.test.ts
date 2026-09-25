@@ -93,3 +93,37 @@ describe("codex runtime", () => {
     expect(cmd.at(-1)).toContain("check_inbox");
   });
 });
+
+describe("opencode runtime", () => {
+  /** A stand-in binary that only answers --version, like OpenCode 1.x ("1.18.32") or 2.x ("opencode v2.0.12"). */
+  async function stub(version: string) {
+    const path = `${dir}/opencode-${version.replace(/\W/g, "_")}`;
+    await Bun.write(path, `#!/bin/sh\necho "${version}"\n`);
+    await Bun.$`chmod +x ${path}`;
+    return path;
+  }
+  const build = async (bin: string, mode: PermissionMode) => {
+    process.env.AOS_OPENCODE_BIN = bin;
+    return RUNTIMES.opencode!.build({ ...ctx(mode), persona: { ...ctx(mode).persona, runtime: "opencode" } });
+  };
+
+  test("2.x gets a private server with --standalone", async () => {
+    const { cmd } = await build(await stub("opencode v2.0.12"), "default");
+    expect(cmd).toContain("--standalone");
+  });
+
+  test("1.x (what npm and the installer ship today) has no --standalone flag", async () => {
+    const { cmd } = await build(await stub("1.18.32"), "default");
+    expect(cmd).not.toContain("--standalone");
+  });
+
+  test("yolo is --auto; the MCP bridge and role file come through the config", async () => {
+    const { cmd, env, firstInput } = await build(await stub("1.18.32"), "yolo");
+    expect(cmd).toContain("--auto");
+    expect(cmd.at(-1)).toBe("/work/space");
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
+    expect(config.mcp.a2a.command).toEqual([process.execPath, "run", expect.stringMatching(/a2a-mcp\.ts$/), "--url", "http://127.0.0.1:4777", "--session", "sde-7", "--token", "tok-123"]);
+    expect(config.instructions).toEqual([`${dir}/role.md`]);
+    expect(firstInput).toContain("check_inbox");
+  });
+});

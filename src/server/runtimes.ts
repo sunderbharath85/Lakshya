@@ -23,6 +23,8 @@ export interface LaunchSpec {
   env: Record<string, string>;
   /** Typed into the TUI once it is idle, for CLIs that cannot take a submitted first prompt. */
   firstInput?: string;
+  /** Screen text that shows the input box is ready for typing (default: ready once the screen settles). */
+  ready?: RegExp;
 }
 
 export interface Runtime {
@@ -120,14 +122,27 @@ const opencode: Runtime = {
     if (ctx.persona.model) config.model = ctx.persona.model;
     const configFile = `${ctx.sessionDir}/opencode.json`;
     await Bun.write(configFile, JSON.stringify(config, null, 2));
-    // --standalone gives each agent a private server, so this session's config and env stay its own.
-    const cmd = [opencode.binary()!, "--standalone"];
+    // Each agent needs a private server so this session's config and env stay its own. 1.x always
+    // runs one per TUI; 2.x shares a background service unless started with --standalone.
+    const cmd = [opencode.binary()!];
+    if (opencodeMajor(cmd[0]!) >= 2) cmd.push("--standalone");
     if (ctx.permissionMode === "yolo") cmd.push("--auto");
     cmd.push(...extraArgs("opencode"), ctx.cwd);
-    // --prompt only prefills the input box in OpenCode v2, so the kickoff is typed in instead.
-    return { cmd, env: { OPENCODE_CONFIG: configFile, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }, firstInput: kickoff(ctx) };
+    // --prompt only prefills the input box in OpenCode v2, so the kickoff is typed in instead. The role is
+    // already loaded through `instructions`, so it doesn't ask to read role.md (outside the workspace).
+    return { cmd, env: { OPENCODE_CONFIG: configFile, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }, firstInput: `You are ${ctx.persona.name} (session ${ctx.sessionId}) in a ${APP_NAME} team. Your role, rules and the team protocol are in your instructions. Call the a2a check_inbox tool now.`, ready: /ctrl\+p commands|Ask anything/i };
   },
 };
+
+const majors = new Map<string, number>();
+/** Major version of an OpenCode binary ("opencode v2.0.12" or "1.18.32"), cached per path. */
+function opencodeMajor(bin: string) {
+  if (!majors.has(bin)) {
+    const out = Bun.spawnSync([bin, "--version"], { stdout: "pipe", stderr: "ignore" }).stdout.toString();
+    majors.set(bin, Number(out.match(/(\d+)\.\d+\.\d+/)?.[1] ?? 2));
+  }
+  return majors.get(bin)!;
+}
 
 export const RUNTIMES: Record<RuntimeId, Runtime> = { claude, codex, opencode };
 

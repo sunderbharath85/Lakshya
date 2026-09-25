@@ -29,7 +29,12 @@ const ATTENTION = [
   /^\s*[❯›]\s*(\d+\.|Yes\b|No\b)/m,
   /\((y\/n|Y\/n|y\/N)\)/,
   /approval required/i,
+  // No credentials: the agent can't do anything until someone logs in.
+  /Not logged in\s*·\s*Run \/login/i,
+  /Sign in with ChatGPT/i,
 ];
+/** If the input box hasn't shown up after this long, stop waiting for it and deliver anyway. */
+const READY_TIMEOUT_MS = 30_000;
 const WORKING = /esc (to )?(interrupt|cancel)|ctrl\+c to (interrupt|cancel)/i;
 
 interface Live {
@@ -43,6 +48,9 @@ interface Live {
   lastOutput: number;
   startedAt: number;
   sawOutput: boolean;
+  /** Screen text showing the CLI's input box is up; nothing is typed before it appears. */
+  readyPattern?: RegExp;
+  ready: boolean;
 }
 
 const live = new Map<string, Live>();
@@ -147,7 +155,7 @@ export async function spawnSession(personaId: string, spawnedBy: string): Promis
   const screen = new Screen({ cols: COLS, rows: ROWS, allowProposedApi: true, scrollback: 2000 });
   const serializer = new SerializeAddon();
   screen.loadAddon(serializer as any);
-  const l: Live = { info, token, screen, serializer, queue: [], lastOutput: Date.now(), startedAt: Date.now(), sawOutput: false };
+  const l: Live = { info, token, screen, serializer, queue: [], lastOutput: Date.now(), startedAt: Date.now(), sawOutput: false, ready: false };
   live.set(id, l);
   saveSession(info, token);
   await Bun.write(`${sessionDir}/command.json`, JSON.stringify(spec.cmd.map((a) => (a === systemPrompt ? "<role.md>" : a)), null, 2));
@@ -177,6 +185,7 @@ export async function spawnSession(personaId: string, spawnedBy: string): Promis
   });
   l.term = l.proc.terminal;
   emit({ type: "session", session: info });
+  l.readyPattern = spec.ready;
   if (spec.firstInput) notify(id, spec.firstInput);
   return info;
 }
@@ -256,11 +265,17 @@ function tick() {
     const text = lines.join("\n");
     let activity: Activity;
     let attentionText: string | undefined;
+    // Keystrokes sent while a TUI is still booting are lost, so wait until its input box is on screen.
+    if (!l.ready && l.sawOutput && now - l.startedAt >= 2500) {
+      l.ready = !l.readyPattern || l.readyPattern.test(text) || now - l.startedAt > READY_TIMEOUT_MS;
+    }
     const hit = ATTENTION.find((re) => re.test(text));
     if (hit) {
       activity = "attention";
-      attentionText = lines.find((line) => hit.test(line))?.trim().slice(0, 140);
-    } else if (!l.sawOutput || now - l.startedAt < 2500) {
+      // The line that matched, or just the matched phrase when it sits in a long status line.
+      const line = lines.find((l) => hit.test(l))?.trim() ?? "";
+      attentionText = (line.length > 90 ? (line.match(hit)?.[0] ?? line) : line).slice(0, 140);
+    } else if (!l.ready) {
       activity = "starting";
     } else if (WORKING.test(text) || now - l.lastOutput < 900) {
       activity = "working";
