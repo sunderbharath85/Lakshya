@@ -15,6 +15,11 @@ services:
       service: lakshya
     environment:
       AOS_PUBLIC_URL: ${LAKSHYA_PUBLIC_URL:-http://localhost:8080}
+    volumes:
+      # Agents' code in a named volume by default: platforms like Dokploy delete and re-clone the repo
+      # folder on every deploy, which would delete a ./workspace bind mount from under running agents.
+      # Set LAKSHYA_WORKSPACE to a host path (on Dokploy: ../files/workspace) to use a folder instead.
+      - ${LAKSHYA_WORKSPACE:-lakshya-workspace}:/workspace
     ports: !reset []
     expose:
       - "4777" # reachable only through caddy
@@ -49,5 +54,6 @@ services:
 volumes:
   lakshya-data:
   lakshya-home:
+  lakshya-workspace:
   caddy-data:
   caddy-config:

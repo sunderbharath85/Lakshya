@@ -64,7 +64,7 @@ Either way, agents inside the container reach the portal directly on 127.0.0.1 w
 | --- | --- |
 | `lakshya-data` | The database and per-session files. |
 | `lakshya-home` | CLI logins and settings (`~/.claude`, `~/.codex`, OpenCode). |
-| `./workspace` → `/workspace` | The code the agents write, one folder per team (`/workspace/main`, …). Change it with `LAKSHYA_WORKSPACE`. |
+| `./workspace` → `/workspace` (local) / `lakshya-workspace` (server) | The code the agents write, one folder per team (`/workspace/main`, …). Change it with `LAKSHYA_WORKSPACE`; a host folder must be writable by uid 1000. |
 
 Both setups use the same volumes, so moving from local to server on one machine keeps your teams, history and logins.
 
@@ -141,10 +141,10 @@ Dokploy deploys the server Compose file straight from this repo. Its Traefik han
    ```
    LAKSHYA_PASSWORD=<a long random password>
    LAKSHYA_PUBLIC_URL=https://lakshya.example.com
-   LAKSHYA_WORKSPACE=../files/workspace
    ```
    Add agent credentials too (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `OPENAI_API_KEY`).
-   - `LAKSHYA_WORKSPACE` matters. Dokploy re-clones the repo on every deploy, and `../files` is the folder it keeps. Leave the default `./workspace` and the agents' code is wiped at each redeploy.
+   - **Leave `LAKSHYA_WORKSPACE` unset.** The agents' code then lives in the `lakshya-workspace` volume, which survives deploys and can be backed up. Never set it to `./workspace` on Dokploy: Dokploy deletes and re-clones the repo folder on every deploy, which deletes the agents' folder from under them ("The current working directory was deleted").
+   - To keep the code in a host folder instead, use `LAKSHYA_WORKSPACE=../files/workspace` (`../files` is what Dokploy keeps), and make it writable for the container's user: `sudo chown -R 1000:1000` on that folder.
 3. **Domains → Add domain**:
    - Service: `caddy`
    - Container port: `8080`
@@ -156,7 +156,8 @@ Notes:
 - **Nothing is published on the host.** `compose.server.yaml` publishes no ports; Traefik reaches Caddy over Dokploy's network.
 - **The first deploy builds both images on the server.** Expect a few minutes; the Lakshya image is about 2.3 GB, mostly the agent CLIs.
 - **Logins made inside the container** (`claude` `/login`, `codex login --device-auth`) are kept in the `lakshya-home` volume, so they survive redeploys. Run them from Dokploy's terminal for the `lakshya` container.
-- **Backups.** Dokploy's volume backups work on `lakshya-data` (tasks, personas, history) and `lakshya-home`.
+- **Backups.** Dokploy's volume backups work on `lakshya-data` (tasks, personas, history), `lakshya-home` (logins) and `lakshya-workspace` (the agents' code).
+- **Auto Deploy.** With Dokploy's Auto Deploy on, every push to the branch redeploys and restarts running agents. Turn it off, or deploy manually between tasks, while agents are working.
 - **Redeploys end running agent sessions.** Deploy between tasks.
 
 ## How it works

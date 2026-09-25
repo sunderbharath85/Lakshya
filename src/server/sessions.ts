@@ -1,5 +1,5 @@
 import { APP_NAME } from "../shared/brand";
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, mkdirSync } from "node:fs";
 import { Terminal as Screen } from "@xterm/headless";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import type { Activity, Persona, SessionInfo } from "../shared/types";
@@ -125,7 +125,17 @@ export async function spawnSession(teamId: string, personaId: string, spawnedBy:
 
   const settings = getSettings();
   const cwd = team.workspaceDir;
-  mkdirSync(cwd, { recursive: true });
+  try {
+    mkdirSync(cwd, { recursive: true });
+    accessSync(cwd, constants.W_OK);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw e;
+    // Typically a host folder bind-mounted into Docker that the container's user (uid 1000) can't write.
+    throw new Error(
+      `${team.name}'s folder ${cwd} isn't writable (${code}). If it's a folder mounted from the host, give it to uid 1000: sudo chown -R 1000:1000 <host folder>. Or change the team's folder in its settings.`,
+    );
+  }
   const id = nextSessionId(teamId, personaId);
   const sessionDir = `${DATA_DIR}/sessions/${id}`;
   mkdirSync(sessionDir, { recursive: true });
