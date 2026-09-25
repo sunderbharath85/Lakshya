@@ -28,6 +28,10 @@ services:
     depends_on:
       lakshya:
         condition: service_healthy
+    # Stated explicitly so Caddy keeps reaching `lakshya` when a platform adds its own proxy network:
+    # some Dokploy versions attach only dokploy-network to the service a domain points at (Dokploy #3525).
+    networks:
+      - default
     expose:
       - "8080"
     environment:
