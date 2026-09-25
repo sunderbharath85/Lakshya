@@ -323,6 +323,40 @@ function KeyRow({ session }: { session: SessionInfo }) {
   );
 }
 
+const RUNTIME_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode" };
+
+/**
+ * The CLI has no credentials. Accepting a prompt can't fix that, so offer the CLI's own login flow in
+ * the terminal, and the env-var alternative.
+ */
+function LoginBanner({ session, send }: { session: SessionInfo; send: (data: string) => void }) {
+  const typeLine = (line: string) => {
+    send(line);
+    setTimeout(() => send("\r"), 150);
+  };
+  const how =
+    session.runtime === "codex"
+      ? { button: "Log in with a device code", run: () => (send("\x1b[B"), setTimeout(() => send("\r"), 150)), steps: "Open the link Codex shows, sign in, and enter the code it gives you.", env: "OPENAI_API_KEY" }
+      : session.runtime === "claude"
+        ? { button: "Log in here", run: () => typeLine("/login"), steps: "Pick your account type, open the link Claude shows, and paste the code back into the terminal.", env: "CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY" }
+        : null;
+  return (
+    <div role="alert" className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-destructive/40 bg-destructive/15 px-4 py-2">
+      <div className="min-w-0 text-sm">
+        <p>
+          <strong className="text-destructive">{shortId(session.id)} isn't logged in to {RUNTIME_NAMES[session.runtime] ?? session.runtime}.</strong> {how?.steps ?? "Log it in from the terminal below."}
+        </p>
+        {how && <p className="text-xs text-muted-foreground">Or set {how.env} in the environment and restart. Logins are remembered for every later agent.</p>}
+      </div>
+      {how && (
+        <Button size="sm" variant="destructive" className="font-bold" onClick={how.run}>
+          {how.button}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function SessionArea({ s, team, current, wall, onPick }: { s: LiveState; team: Team; current?: SessionInfo; wall: boolean; onPick: (id: string) => void }) {
   const running = s.sessions.filter((x) => x.activity !== "exited");
   const send = (data: string) => current && api(`/api/sessions/${current.id}/input`, "POST", { data });
@@ -360,7 +394,8 @@ function SessionArea({ s, team, current, wall, onPick }: { s: LiveState; team: T
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-terminal">
-      {current.activity === "attention" && (
+      {current.activity === "attention" && current.attentionKind === "login" && <LoginBanner session={current} send={send} />}
+      {current.activity === "attention" && current.attentionKind !== "login" && (
         <div role="alert" className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-destructive/40 bg-destructive/15 px-4 py-2">
           <p className="min-w-0 text-sm">
             <strong className="text-destructive">{shortId(current.id)} is asking.</strong> {current.attentionText}

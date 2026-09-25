@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 
 const THEME = {
   background: "#121212",
@@ -34,6 +35,8 @@ export function TerminalView({ sessionId, mode }: { sessionId: string; mode: "fo
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    // Login flows print URLs to open; make them clickable.
+    term.loadAddon(new WebLinksAddon());
     term.open(el);
 
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/term/${sessionId}`);

@@ -30,10 +30,9 @@ const ATTENTION = [
   /^\s*[❯›]\s*(\d+\.|Yes\b|No\b)/m,
   /\((y\/n|Y\/n|y\/N)\)/,
   /approval required/i,
-  // No credentials: the agent can't do anything until someone logs in.
-  /Not logged in\s*·\s*Run \/login/i,
-  /Sign in with ChatGPT/i,
 ];
+/** No credentials: the agent can't do anything until someone logs in. Answering "Accept" won't help. */
+const LOGIN = [/Not logged in\s*·\s*Run \/login/i, /Sign in with ChatGPT/i];
 /** If the input box hasn't shown up after this long, stop waiting for it and deliver anyway. */
 const READY_TIMEOUT_MS = 30_000;
 const WORKING = /esc (to )?(interrupt|cancel)|ctrl\+c to (interrupt|cancel)/i;
@@ -274,13 +273,16 @@ function tick() {
     const text = lines.join("\n");
     let activity: Activity;
     let attentionText: string | undefined;
+    let attentionKind: SessionInfo["attentionKind"];
     // Keystrokes sent while a TUI is still booting are lost, so wait until its input box is on screen.
     if (!l.ready && l.sawOutput && now - l.startedAt >= 2500) {
       l.ready = !l.readyPattern || l.readyPattern.test(text) || now - l.startedAt > READY_TIMEOUT_MS;
     }
-    const hit = ATTENTION.find((re) => re.test(text));
+    const login = LOGIN.find((re) => re.test(text));
+    const hit = login ?? ATTENTION.find((re) => re.test(text));
     if (hit) {
       activity = "attention";
+      attentionKind = login ? "login" : "prompt";
       // The line that matched, or just the matched phrase when it sits in a long status line.
       const line = lines.find((l) => hit.test(l))?.trim() ?? "";
       attentionText = (line.length > 90 ? (line.match(hit)?.[0] ?? line) : line).slice(0, 140);
@@ -291,7 +293,7 @@ function tick() {
     } else {
       activity = "idle";
     }
-    update(l, { activity, attentionText, idleSince: activity === "idle" ? (l.info.idleSince ?? now) : undefined });
+    update(l, { activity, attentionText, attentionKind, idleSince: activity === "idle" ? (l.info.idleSince ?? now) : undefined });
 
     const next = l.queue[0];
     if (!next || activity === "attention" || activity === "starting") continue;

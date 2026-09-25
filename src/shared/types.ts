@@ -61,6 +61,8 @@ export interface SessionInfo {
   cwd: string;
   activity: Activity;
   attentionText?: string;
+  /** prompt: a menu or approval to answer. login: the CLI has no credentials and needs someone to log in. */
+  attentionKind?: "prompt" | "login";
   pendingDeliveries: number;
   /** When the agent last went idle at its prompt. */
   idleSince?: number;
