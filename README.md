@@ -7,6 +7,17 @@ bun install
 bun dev            # http://127.0.0.1:4777
 ```
 
+![An agent's live terminal: the Software Engineer has finished an A2A task and summarised it](docs/screenshots/terminal.png)
+
+| | |
+| --- | --- |
+| ![Approval prompt flagged as Needs you, with Accept and Decline](docs/screenshots/needs-you.png) | ![Tasks flyout showing a task's A2A thread and result](docs/screenshots/tasks.png) |
+| **Needs you.** When an agent stops at an approval prompt, it turns red in the sidebar and an Accept / Decline banner appears. | **Tasks.** Every A2A task, with the full message thread and the result artifact. |
+| ![All sessions grid with four agents](docs/screenshots/all-sessions.png) | ![Persona editor](docs/screenshots/personas.png) |
+| **All sessions.** Every running agent at once, each redrawn to fit its tile. | **Personas.** Role, rules, runtime, model, permissions and who each one may talk to. |
+
+<p align="center"><img src="docs/screenshots/mobile.png" alt="Lakshya on a phone" width="300"></p>
+
 Type a request in the bar at the bottom. The Product Manager picks it up, writes a brief and hands it to the Project Manager. The Project Manager splits the work, starts engineer and QA sessions, and tracks each task to done. Every agent appears in the sidebar as a terminal you can watch and type into. Tasks and their full A2A history are in the **Tasks** flyout.
 
 ## How it works
@@ -53,6 +64,15 @@ Personas default to *edit files freely, ask before commands*. Approval prompts s
 
 You can also set YOLO per persona.
 
+### Codex
+
+- The default workspace sits inside this repo. Codex only runs in folders it trusts, and it ignores trust passed with `-c`.
+- The first time Codex opens an untrusted folder, it shows a trust menu. The portal marks that session **Needs you** and types nothing until you answer.
+- Permission modes map to Codex flags:
+  - Ask: no flags
+  - Edit files freely: `--sandbox workspace-write --ask-for-approval on-request` (Codex removed `--full-auto`)
+  - YOLO: `--dangerously-bypass-approvals-and-sandbox`
+
 ## Configuration
 
 | Env | Default | |
@@ -68,7 +88,8 @@ The product name is set in one place: `src/shared/brand.ts`.
 ## Development
 
 ```sh
-bun test                          # A2A, delivery, permissions, streaming, autopilot (uses a fake agent, no LLM calls)
+bun test                          # A2A, delivery, permissions, streaming, autopilot, Codex (fake agents, no LLM calls)
+AOS_LIVE_CODEX=1 bun test         # also runs a real Codex agent in YOLO mode (needs `codex login`)
 bun run typecheck
 bun scripts/peek.ts <session-id>  # print an agent's current screen as text
 bun scripts/type.ts <session-id> '\r'

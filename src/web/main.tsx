@@ -231,7 +231,7 @@ function Header(p: {
       {running > 1 && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant={p.wall ? "secondary" : "ghost"} size="icon" aria-label="Show all sessions" aria-pressed={p.wall} onClick={() => p.setWall(!p.wall)}>
+            <Button variant={p.wall ? "secondary" : "ghost"} size="icon" className="hidden sm:inline-flex" aria-label="Show all sessions" aria-pressed={p.wall} onClick={() => p.setWall(!p.wall)}>
               <LayoutGrid />
             </Button>
           </TooltipTrigger>
@@ -331,13 +331,13 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
 
   if (wall) {
     return (
-      <div className="grid min-h-0 flex-1 auto-rows-[minmax(220px,1fr)] grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-px overflow-y-auto bg-border">
+      <div className="grid min-h-0 flex-1 auto-rows-[minmax(280px,1fr)] grid-cols-[repeat(auto-fit,minmax(min(100%,560px),1fr))] gap-px overflow-y-auto bg-border">
         {running.map((x) => (
           <button key={x.id} className="grid min-h-0 grid-rows-[auto_1fr] overflow-hidden bg-terminal text-left" onClick={() => onPick(x.id)}>
             <span className="flex items-center gap-2 bg-sidebar px-3 py-1.5 text-sm font-bold">
               <Mark activity={x.activity} /> {x.id} <span className="font-normal text-muted-foreground">{ACTIVITY[x.activity]}</span>
             </span>
-            <TerminalView sessionId={x.id} interactive={false} />
+            <TerminalView sessionId={x.id} mode="tile" />
           </button>
         ))}
       </div>
@@ -376,7 +376,7 @@ function SessionArea({ s, current, wall, onPick }: { s: LiveState; current?: Ses
           </div>
         </div>
       )}
-      <TerminalView key={current.id} sessionId={current.id} interactive />
+      <TerminalView key={current.id} sessionId={current.id} mode="focus" />
       {current.activity === "exited" ? (
         <div className="flex shrink-0 items-center gap-3 border-t px-4 py-2 text-sm text-muted-foreground">
           This session has stopped.

@@ -33,13 +33,13 @@ const BLANK: Persona = {
 
 const PERMISSIONS = [
   { id: "default", label: "Ask before edits and commands" },
-  { id: "acceptEdits", label: "Edit files freely, ask before commands" },
+  { id: "acceptEdits", label: "Edit files, ask for commands" },
   { id: "yolo", label: "YOLO: never ask" },
 ] as const;
 
 function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn("grid min-w-0 gap-1.5", className)}>
+    <div className={cn("grid min-w-0 content-start gap-1.5", className)}>
       <Label className="text-xs font-bold">{label}</Label>
       {children}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
@@ -193,10 +193,10 @@ export function PersonaEditor({ s }: { s: LiveState }) {
             </Section>
 
             <Section title="Coding agent">
-              <div className="grid gap-4 sm:grid-cols-[1fr_1fr_1.4fr_110px]">
+              <div className="grid gap-4 sm:grid-cols-[1fr_1fr_1.5fr_100px]">
                 <Field label="Runtime">
                   <Select value={draft.runtime} onValueChange={(v) => set("runtime", v as Persona["runtime"])}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full min-w-0 [&>span]:truncate">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -214,7 +214,7 @@ export function PersonaEditor({ s }: { s: LiveState }) {
                 </Field>
                 <Field label="Permissions">
                   <Select value={draft.permissionMode} onValueChange={(v) => set("permissionMode", v as Persona["permissionMode"])}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full min-w-0 [&>span]:truncate">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

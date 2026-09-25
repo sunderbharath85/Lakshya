@@ -100,11 +100,6 @@
   }
 }
 
-/* xterm thumbnails scale down from the PTY's real size */
-.term-thumb > .terminal {
-  transform-origin: 0 0;
-  position: absolute;
-}
 @keyframes beat {
   50% {
     opacity: 0.3;

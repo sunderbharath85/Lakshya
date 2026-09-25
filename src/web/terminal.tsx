@@ -13,21 +13,22 @@ const THEME = {
 };
 
 /**
- * A live view of one agent's PTY. `interactive` views take keyboard input and resize the PTY to fit;
- * thumbnails render at the PTY's own size, scaled down, and never resize it.
+ * A live view of one agent's PTY. Both modes fit the PTY to the view (the agent redraws at that size):
+ * `focus` takes keyboard input; `tile` is a smaller, read-only view for the all-sessions grid.
  */
-export function TerminalView({ sessionId, interactive }: { sessionId: string; interactive: boolean }) {
+export function TerminalView({ sessionId, mode }: { sessionId: string; mode: "focus" | "tile" }) {
   const host = useRef<HTMLDivElement>(null);
+  const focus = mode === "focus";
 
   useEffect(() => {
     const el = host.current!;
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
-      fontSize: interactive && window.innerWidth < 720 ? 11 : interactive ? 14 : 12,
+      fontSize: !focus ? 11 : window.innerWidth < 720 ? 11 : 14,
       lineHeight: 1.15,
       theme: THEME,
-      cursorBlink: interactive,
-      disableStdin: !interactive,
+      cursorBlink: focus,
+      disableStdin: !focus,
       scrollback: 5000,
       allowProposedApi: true,
     });
@@ -38,18 +39,11 @@ export function TerminalView({ sessionId, interactive }: { sessionId: string; in
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/term/${sessionId}`);
     ws.binaryType = "arraybuffer";
     const sendResize = () => {
-      if (!interactive || ws.readyState !== WebSocket.OPEN) return;
+      if (ws.readyState !== WebSocket.OPEN) return;
       try {
         fit.fit();
       } catch {}
       ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-    };
-    const scaleThumb = () => {
-      if (interactive) return;
-      const screen = el.querySelector<HTMLElement>(".xterm-screen");
-      if (!screen) return;
-      const s = Math.min(el.clientWidth / screen.offsetWidth, el.clientHeight / screen.offsetHeight, 1);
-      (el.firstElementChild as HTMLElement).style.transform = `scale(${s})`;
     };
 
     ws.onmessage = (ev) => {
@@ -59,20 +53,17 @@ export function TerminalView({ sessionId, interactive }: { sessionId: string; in
           term.reset();
           // Replay at the size the screen was drawn at, then fit; the agent redraws on the resize.
           if (msg.cols) term.resize(msg.cols, msg.rows);
-          term.write(msg.data, () => {
-            scaleThumb();
-            if (interactive) sendResize();
-          });
+          term.write(msg.data, sendResize);
         }
       } else {
         term.write(new Uint8Array(ev.data));
       }
     };
-    ws.onopen = () => interactive && setTimeout(sendResize, 50);
-    const input = term.onData((data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "input", data })));
-    const ro = new ResizeObserver(() => (interactive ? sendResize() : scaleThumb()));
+    ws.onopen = () => setTimeout(sendResize, 50);
+    const input = term.onData((data) => focus && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "input", data })));
+    const ro = new ResizeObserver(() => sendResize());
     ro.observe(el);
-    if (interactive) term.focus();
+    if (focus) term.focus();
 
     return () => {
       ro.disconnect();
@@ -80,7 +71,7 @@ export function TerminalView({ sessionId, interactive }: { sessionId: string; in
       ws.close();
       term.dispose();
     };
-  }, [sessionId, interactive]);
+  }, [sessionId, focus]);
 
-  return <div ref={host} className={interactive ? "min-h-0 flex-1 overflow-hidden bg-terminal pt-2 pl-3" : "term-thumb relative h-full overflow-hidden"} />;
+  return <div ref={host} className={focus ? "min-h-0 flex-1 overflow-hidden bg-terminal pt-2 pl-3" : "min-h-0 overflow-hidden bg-terminal pt-1 pl-2"} />;
 }
