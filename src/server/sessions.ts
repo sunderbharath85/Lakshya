@@ -228,10 +228,10 @@ export function resizeSession(id: string, cols: number, rows: number) {
 }
 
 /** Current screen as an ANSI string a fresh xterm can replay. */
-export function screenSnapshot(id: string): { data: string; cols: number; rows: number } | null {
+export function screenSnapshot(id: string, scrollback = 1000): { data: string; cols: number; rows: number } | null {
   const l = live.get(id);
   if (!l) return null;
-  return { data: l.serializer.serialize({ scrollback: 1000 }), cols: l.screen.cols, rows: l.screen.rows };
+  return { data: l.serializer.serialize({ scrollback }), cols: l.screen.cols, rows: l.screen.rows };
 }
 
 export function tokenOwner(token: string): string | undefined {

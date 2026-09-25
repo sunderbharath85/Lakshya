@@ -463,6 +463,19 @@ const server = Bun.serve({
         return json({ ok: true });
       },
     },
+    // The terminal over plain HTTP, for browsers or proxies where the WebSocket can't get through.
+    "/api/sessions/:id/screen": (req) => {
+      const scrollback = Math.min(Number(new URL(req.url).searchParams.get("scrollback") ?? 200), 1000);
+      const snap = screenSnapshot(req.params.id, scrollback);
+      return snap ? json(snap) : fail("This session's screen is no longer in memory", 404);
+    },
+    "/api/sessions/:id/resize": {
+      POST: async (req) => {
+        const { cols, rows } = (await req.json()) as { cols: number; rows: number };
+        resizeSession(req.params.id, cols, rows);
+        return json({ ok: true });
+      },
+    },
     "/api/sessions/:id/forget": { POST: (req) => (forgetSession(req.params.id), json({ ok: true })) },
     "/api/sessions/:id/role": async (req) => {
       const f = Bun.file(`${DATA_DIR}/sessions/${req.params.id}/role.md`);
