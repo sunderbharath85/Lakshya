@@ -542,6 +542,7 @@ const server = Bun.serve({
 
 setPublisher((topic, data) => server.publish(topic, data));
 
-console.log(`${APP_NAME} running at ${PORTAL}`);
-console.log(`A2A agent card: ${PORTAL}/.well-known/agent-card.json`);
+console.log(`${APP_NAME} listening on ${HOST}:${PORT}${HOST === "0.0.0.0" ? " (all interfaces)" : ""}`);
+console.log(`  agents reach it at ${PORTAL}; public address ${PUBLIC_URL}`);
+console.log(`  A2A agent card: ${PUBLIC_URL}/.well-known/agent-card.json`);
 for (const r of runtimeAvailability()) console.log(`  ${r.name.padEnd(12)} ${r.path ?? "not found"}`);
