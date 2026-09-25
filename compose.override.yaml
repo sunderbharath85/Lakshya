@@ -1,0 +1,6 @@
+# Loaded automatically by a plain `docker compose up` (and not when a platform passes -f compose.yaml):
+# publishes the portal on this machine.
+services:
+  caddy:
+    ports:
+      - "${LAKSHYA_BIND:-127.0.0.1}:${LAKSHYA_PORT:-8080}:8080"

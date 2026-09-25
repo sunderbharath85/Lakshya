@@ -1,4 +1,6 @@
 # docker compose up -d --build   →   http://localhost:8080 (user and password from .env)
+# The host port is published by compose.override.yaml, which `docker compose up` loads automatically.
+# Platforms that route through their own proxy (Dokploy, Coolify) deploy this file alone. See README.
 name: lakshya
 
 services:
@@ -23,13 +25,16 @@ services:
       - "4777" # reachable only through caddy
 
   caddy:
-    image: caddy:2
+    build:
+      context: docker
+      dockerfile: caddy.Dockerfile
+    image: lakshya-caddy:latest
     restart: unless-stopped
     depends_on:
       lakshya:
         condition: service_healthy
-    ports:
-      - "${LAKSHYA_BIND:-127.0.0.1}:${LAKSHYA_PORT:-8080}:8080"
+    expose:
+      - "8080"
     environment:
       LAKSHYA_SITE: ${LAKSHYA_SITE:-:8080}
       LAKSHYA_USER: ${LAKSHYA_USER:-admin}
@@ -39,7 +44,6 @@ services:
     command:
       - export LAKSHYA_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$LAKSHYA_PASSWORD")" && unset LAKSHYA_PASSWORD && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
 

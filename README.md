@@ -27,6 +27,8 @@ cp .env.example .env         # set LAKSHYA_PASSWORD (required) and any agent cre
 docker compose up -d --build # http://localhost:8080, log in with LAKSHYA_USER / LAKSHYA_PASSWORD
 ```
 
+Locally, `compose.override.yaml` (loaded automatically) publishes Caddy on `127.0.0.1:8080`.
+
 Two containers:
 
 - **`lakshya`**: the portal, plus Claude Code, Codex and OpenCode.
@@ -72,6 +74,33 @@ An agent without credentials shows up as **Needs you** ("Not logged in").
 - Leave a CLI out with `none`.
 
 Redeploying restarts the container, which ends every running agent session. Tasks and history stay.
+
+## Deploy on Dokploy
+
+Dokploy deploys the Compose file straight from this repo. Its Traefik handles your domain and HTTPS, and our Caddy still does basic auth behind it.
+
+1. **Create → Compose**. Set the provider to this Git repo, branch `main`, and the compose path to `./compose.yaml`.
+2. **Environment**. At minimum:
+   ```
+   LAKSHYA_PASSWORD=<a long random password>
+   LAKSHYA_PUBLIC_URL=https://lakshya.example.com
+   LAKSHYA_WORKSPACE=../files/workspace
+   ```
+   Add agent credentials too (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `OPENAI_API_KEY`).
+   - `LAKSHYA_WORKSPACE` matters. Dokploy re-clones the repo on every deploy, and `../files` is the folder it keeps. Leave the default `./workspace` and the agents' code is wiped at each redeploy.
+3. **Domains → Add domain**:
+   - Service: `caddy`
+   - Container port: `8080`
+   - HTTPS on, with a Let's Encrypt certificate
+   - Leave `LAKSHYA_SITE` at its default `:8080`: Traefik terminates TLS, and Caddy only checks the password.
+4. **Deploy.** Open the domain and log in with `LAKSHYA_USER` (default `admin`) and your password.
+
+Notes:
+- **Nothing is published on the host.** Dokploy runs `compose.yaml` alone, so the `compose.override.yaml` port mapping isn't loaded. Traefik reaches Caddy over Dokploy's network.
+- **The first deploy builds both images on the server.** Expect a few minutes; the Lakshya image is about 2.3 GB, mostly the agent CLIs.
+- **Logins made inside the container** (`claude` `/login`, `codex login --device-auth`) are kept in the `lakshya-home` volume, so they survive redeploys. Run them from Dokploy's terminal for the `lakshya` container.
+- **Backups.** Dokploy's volume backups work on `lakshya-data` (tasks, personas, history) and `lakshya-home`.
+- **Redeploys end running agent sessions.** Deploy between tasks.
 
 ## How it works
 
