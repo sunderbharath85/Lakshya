@@ -1,0 +1,8 @@
+# Files that run inside Linux containers or as scripts must keep LF line endings, even when the repo is
+# cloned on Windows with core.autocrlf=true (a CRLF shebang makes the container fail to start).
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.Dockerfile  text eol=lf
+docker/Caddyfile text eol=lf
+*.yaml        text eol=lf
+test/fake-codex.ts text eol=lf
