@@ -22,7 +22,11 @@ const ATTENTION = [
   /Allow (command|this|once|always)\b/i,
   /Press Enter to continue/i,
   /Enter to (confirm|select|continue)/i,
-  /^\s*❯\s*(\d+\.|Yes\b|No\b)/m,
+  // Codex: "Trust this folder?" and other menus ("› 1. …", "enter continue · esc quit")
+  /Trust this (folder|directory)/i,
+  /enter (to )?continue\s*·\s*esc/i,
+  // Selection menus, marked ❯ (Claude Code) or › (Codex). Typing into one can pick an option, even Quit.
+  /^\s*[❯›]\s*(\d+\.|Yes\b|No\b)/m,
   /\((y\/n|Y\/n|y\/N)\)/,
   /approval required/i,
 ];

@@ -100,7 +100,8 @@ const codex: Runtime = {
     ];
     if (ctx.persona.model) cmd.push("--model", ctx.persona.model);
     if (ctx.permissionMode === "yolo") cmd.push("--dangerously-bypass-approvals-and-sandbox");
-    else if (ctx.permissionMode === "acceptEdits") cmd.push("--full-auto");
+    // Codex dropped --full-auto; this is what it used to expand to.
+    else if (ctx.permissionMode === "acceptEdits") cmd.push("--sandbox", "workspace-write", "--ask-for-approval", "on-request");
     cmd.push(...extraArgs("codex"), kickoff(ctx));
     return { cmd, env: {} };
   },
