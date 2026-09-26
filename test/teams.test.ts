@@ -136,3 +136,27 @@ test("an install from before teams becomes the Main team, keeping its folder, pe
   expect(state.personas.map((p: any) => [p.teamId, p.name])).toContainEqual(["main", "Old Software Engineer"]);
   expect(state.tasks[0]).toMatchObject({ id: "task_old", metadata: { team: "main", title: "Old work" } });
 }, 20_000);
+
+test("one persona, several sessions: extra engineers only when an orchestrator asks, up to Max sessions", async () => {
+  const s = await startServer(4792);
+  await s.call("/api/request", "POST", { text: "Build the shop" }); // starts main.product-manager-1
+  const pm = s.tokenOf("main.product-manager-1");
+  const send = (newSession = false) => s.rpc("/a2a/sde", "message/send", { message: text("Build a feature"), metadata: { newSession } }, pm);
+
+  // First message to the role starts its first session; the next one goes to that same busy session.
+  expect((await send()).result.metadata.to).toBe("main.sde-1");
+  expect((await send()).result.metadata.to).toBe("main.sde-1");
+
+  // Asking for a new session (what spawn_agent / new_session do) starts parallel engineers...
+  expect((await send(true)).result.metadata.to).toBe("main.sde-2");
+  expect((await send(true)).result.metadata.to).toBe("main.sde-3");
+  // ...until the persona's Max sessions (3 for the SDE); then the least busy existing one gets it.
+  expect((await send(true)).result.metadata.to).toBe("main.sde-2");
+
+  // Agents without spawn rights can't ask for extra sessions.
+  const sdeToken = s.tokenOf("main.sde-1");
+  const denied = await s.rpc("/a2a/qa-engineer", "message/send", { message: text("Test it") }, sdeToken);
+  expect(denied.result.metadata.to).toBe("main.qa-engineer-1"); // a first session is always fine
+  const more = await s.rpc("/a2a/qa-engineer", "message/send", { message: text("Test more"), metadata: { newSession: true } }, sdeToken);
+  expect(more.error.message).toContain("may not start new sessions");
+}, 20_000);
