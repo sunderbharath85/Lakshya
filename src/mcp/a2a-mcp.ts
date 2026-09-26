@@ -9,7 +9,7 @@ const arg = (name: string, env: string) => {
   const i = argv.indexOf(`--${name}`);
   return (i >= 0 ? argv[i + 1] : undefined) ?? process.env[env] ?? "";
 };
-const URL_BASE = arg("url", "AOS_PORTAL_URL") || "http://127.0.0.1:4777";
+const URL_BASE = arg("url", "AOS_PORTAL_URL") || "http://localhost:4777";
 const SESSION = arg("session", "AOS_SESSION_ID");
 const TOKEN = arg("token", "AOS_TOKEN");
 

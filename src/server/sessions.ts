@@ -54,7 +54,7 @@ interface Live {
 }
 
 const live = new Map<string, Live>();
-let portalUrl = "http://127.0.0.1:4777";
+let portalUrl = "http://localhost:4777";
 const exitHandlers: ((s: SessionInfo) => void)[] = [];
 
 export function configureSessions(url: string) {

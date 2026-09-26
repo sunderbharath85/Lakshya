@@ -42,9 +42,9 @@ import {
 } from "./store";
 
 const PORT = Number(process.env.AOS_PORT ?? 4777);
-const HOST = process.env.AOS_HOST ?? "127.0.0.1";
+const HOST = process.env.AOS_HOST ?? "localhost";
 /** Where agents inside this machine reach the portal. */
-const PORTAL = `http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}`;
+const PORTAL = `http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST.includes(":") ? `[${HOST}]` : HOST}:${PORT}`;
 /** Where outside A2A clients reach it, e.g. behind a reverse proxy. Used in agent cards. */
 const PUBLIC_URL = (process.env.AOS_PUBLIC_URL ?? PORTAL).replace(/\/$/, "");
 
@@ -277,8 +277,9 @@ function resetPersonas(teamId: string) {
 
 type WsData = { kind: "events" } | { kind: "term"; id: string };
 
-const server = Bun.serve({
-  hostname: HOST,
+const serveOn = (hostname: string) =>
+  Bun.serve({
+  hostname,
   port: PORT,
   development: process.env.NODE_ENV !== "production" && { hmr: true, console: true },
   idleTimeout: 0,
@@ -552,11 +553,29 @@ const server = Bun.serve({
       else if (msg.type === "resize") resizeSession(ws.data.id, msg.cols, msg.rows);
     },
   },
+  });
+
+/**
+ * "localhost" means both loopback addresses. Bun binds the name to just one of them (IPv6 ::1 on macOS),
+ * which leaves anything that connects to 127.0.0.1 refused. Skip ::1 on hosts without IPv6.
+ */
+const hosts = HOST === "localhost" ? ["127.0.0.1", "::1"] : [HOST];
+const servers = hosts.flatMap((h) => {
+  try {
+    return [serveOn(h)];
+  } catch (e) {
+    if (h === "::1") return [];
+    throw e;
+  }
+});
+setPublisher((topic, data) => {
+  for (const s of servers) s.publish(topic, data);
 });
 
-setPublisher((topic, data) => server.publish(topic, data));
-
-console.log(`${APP_NAME} listening on ${HOST}:${PORT}${HOST === "0.0.0.0" ? " (all interfaces)" : ""}`);
+console.log(
+  `${APP_NAME} listening on http://${HOST.includes(":") ? `[${HOST}]` : HOST}:${PORT}` +
+    (HOST === "0.0.0.0" ? " (all interfaces)" : HOST === "localhost" ? ` (${servers.map((s) => s.hostname).join(" and ")})` : ""),
+);
 console.log(`  agents reach it at ${PORTAL}; public address ${PUBLIC_URL}`);
 console.log(`  A2A agent card: ${PUBLIC_URL}/.well-known/agent-card.json`);
 for (const r of runtimeAvailability()) console.log(`  ${r.name.padEnd(12)} ${r.path ?? "not found"}`);

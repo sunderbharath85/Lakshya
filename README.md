@@ -4,7 +4,7 @@ A portal where a team of coding agents builds software together. Each teammate i
 
 ```sh
 bun install
-bun dev            # http://127.0.0.1:4777
+bun dev            # http://localhost:4777
 ```
 
 Runs on macOS and Linux. On Windows, use WSL2 (see [Windows](#windows)) or Docker.
@@ -217,8 +217,8 @@ You can also set YOLO per persona.
 
 | Env | Default | |
 | --- | --- | --- |
-| `AOS_PORT` / `AOS_HOST` | `4777` / `127.0.0.1` | Where the portal listens. It has no login of its own: keep it on localhost, or put it behind the Compose setup's Caddy. |
-| `AOS_PUBLIC_URL` | `http://127.0.0.1:4777` | The address outside A2A clients use, advertised in the agent cards. |
+| `AOS_PORT` / `AOS_HOST` | `4777` / `localhost` | Where the portal listens. `localhost` covers both 127.0.0.1 and ::1. It has no login of its own: keep it on localhost, or put it behind the Compose setup's Caddy. |
+| `AOS_PUBLIC_URL` | `http://localhost:4777` | The address outside A2A clients use, advertised in the agent cards. |
 | `AOS_WORKSPACE` | `./workspace` | Where new teams get their folders (`<root>/<team>`). Each team's folder can be changed in its settings. |
 | `AOS_DATA_DIR` | `./data` | SQLite database and per-session files (role prompt, MCP config, command). |
 | `AOS_CLAUDE_BIN`, `AOS_CODEX_BIN`, `AOS_OPENCODE_BIN` | found on `PATH` | CLI locations. |
