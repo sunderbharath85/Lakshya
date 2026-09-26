@@ -60,7 +60,8 @@ async function screenOf(id: string) {
 test("serves an A2A agent card for the entry persona", async () => {
   const card = await get("/.well-known/agent-card.json");
   expect(card.name).toBe("Product Manager, Main team");
-  expect(card.url).toBe(`${BASE}/a2a/main/product-manager`);
+  // The server listens on localhost by default, so that's the address it advertises.
+  expect(card.url).toBe(`http://localhost:${PORT}/a2a/main/product-manager`);
   expect(card.capabilities.streaming).toBe(true);
 });
 
