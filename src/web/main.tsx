@@ -1,7 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import { createRoot } from "react-dom/client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ChevronsDownUp, ChevronsUpDown, LayoutGrid, ListChecks, Plus, Settings2, Square, Users } from "lucide-react";
+import { ArrowUp, LayoutGrid, ListChecks, PanelLeft, Plus, Settings2, Square, Users } from "lucide-react";
 import type { Activity, Persona, SessionInfo, Team } from "../shared/types";
 import { APP_NAME } from "../shared/brand";
 import { Button } from "@/components/ui/button";
@@ -61,12 +61,6 @@ export function Logo({ className }: { className?: string }) {
 
 function Sidebar({ s, team, selected, onSelect }: { s: LiveState; team: string; selected: string | null; onSelect: (id: string) => void }) {
   const [error, setError] = useState<string | null>(null);
-  const [agentsOpen, setAgentsOpen] = useState(() => localStorage.getItem("sidebarAgents") !== "hidden");
-  const toggleAgents = () =>
-    setAgentsOpen((o) => {
-      localStorage.setItem("sidebarAgents", o ? "hidden" : "shown");
-      return !o;
-    });
   const start = async (p: Persona) => {
     setError(null);
     try {
@@ -88,16 +82,7 @@ function Sidebar({ s, team, selected, onSelect }: { s: LiveState; team: string; 
         <TooltipContent side="right">{APP_NAME}</TooltipContent>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" onClick={toggleAgents} aria-label={agentsOpen ? "Hide agents" : "Show agents"} aria-expanded={agentsOpen}>
-            {agentsOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="right">{agentsOpen ? "Hide agents" : "Show agents"}</TooltipContent>
-      </Tooltip>
-
-      <div className={cn("flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto", !agentsOpen && "invisible")}>
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
         {s.personas.map((p) => {
           const live = s.sessions.filter((x) => x.personaId === p.id && x.activity !== "exited");
           if (live.length === 0) {
@@ -195,6 +180,8 @@ function Header(p: {
   setWall: (v: boolean) => void;
   openTasks: () => void;
   openPersonas: () => void;
+  sidebarOpen: boolean;
+  toggleSidebar: () => void;
 }) {
   const { s, current } = p;
   const persona = current && p.names.personaOfSession(current.id);
@@ -210,6 +197,14 @@ function Header(p: {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-3 sm:gap-3 sm:px-4">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={p.toggleSidebar} aria-label={p.sidebarOpen ? "Hide sidebar" : "Show sidebar"} aria-expanded={p.sidebarOpen}>
+              <PanelLeft />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{p.sidebarOpen ? "Hide sidebar" : "Show sidebar"}</TooltipContent>
+        </Tooltip>
         <h1 className="hidden font-bold sm:block">{APP_NAME}</h1>
         {p.switcher}
         <span className="hidden text-muted-foreground/50 sm:inline" aria-hidden>
@@ -551,6 +546,12 @@ function App() {
 
   const [selected, setSelectedRaw] = useState<string | null>(null);
   const [wall, setWall] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("sidebar") !== "hidden");
+  const toggleSidebar = () =>
+    setSidebarOpen((o) => {
+      localStorage.setItem("sidebar", o ? "hidden" : "shown");
+      return !o;
+    });
   const [tasksOpen, setTasksOpen] = useState(false);
   const [personasOpen, setPersonasOpen] = useState(false);
   const [newTeamOpen, setNewTeamOpen] = useState(false);
@@ -587,7 +588,7 @@ function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex h-dvh overflow-hidden">
-        <Sidebar s={s} team={team.id} selected={selected} onSelect={pick} />
+        {sidebarOpen && <Sidebar s={s} team={team.id} selected={selected} onSelect={pick} />}
         <main className="flex min-w-0 flex-1 flex-col">
           <Header
             s={s}
@@ -598,6 +599,8 @@ function App() {
             setWall={setWall}
             openTasks={() => setTasksOpen(true)}
             openPersonas={() => setPersonasOpen(true)}
+            sidebarOpen={sidebarOpen}
+            toggleSidebar={toggleSidebar}
           />
           <SessionArea s={s} team={team} current={current} wall={wall} onPick={pick} />
           <RequestBar key={team.id} s={s} team={team} />
