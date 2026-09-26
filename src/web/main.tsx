@@ -1,7 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import { createRoot } from "react-dom/client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, LayoutGrid, ListChecks, Plus, Settings2, Square, Users } from "lucide-react";
+import { ArrowUp, ChevronsDownUp, ChevronsUpDown, LayoutGrid, ListChecks, Plus, Settings2, Square, Users } from "lucide-react";
 import type { Activity, Persona, SessionInfo, Team } from "../shared/types";
 import { APP_NAME } from "../shared/brand";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,12 @@ export function Logo({ className }: { className?: string }) {
 
 function Sidebar({ s, team, selected, onSelect }: { s: LiveState; team: string; selected: string | null; onSelect: (id: string) => void }) {
   const [error, setError] = useState<string | null>(null);
+  const [agentsOpen, setAgentsOpen] = useState(() => localStorage.getItem("sidebarAgents") !== "hidden");
+  const toggleAgents = () =>
+    setAgentsOpen((o) => {
+      localStorage.setItem("sidebarAgents", o ? "hidden" : "shown");
+      return !o;
+    });
   const start = async (p: Persona) => {
     setError(null);
     try {
@@ -82,7 +88,16 @@ function Sidebar({ s, team, selected, onSelect }: { s: LiveState; team: string; 
         <TooltipContent side="right">{APP_NAME}</TooltipContent>
       </Tooltip>
 
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={toggleAgents} aria-label={agentsOpen ? "Hide agents" : "Show agents"} aria-expanded={agentsOpen}>
+            {agentsOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{agentsOpen ? "Hide agents" : "Show agents"}</TooltipContent>
+      </Tooltip>
+
+      <div className={cn("flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto", !agentsOpen && "invisible")}>
         {s.personas.map((p) => {
           const live = s.sessions.filter((x) => x.personaId === p.id && x.activity !== "exited");
           if (live.length === 0) {
