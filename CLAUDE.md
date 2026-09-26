@@ -9,6 +9,7 @@ Portal for a team of coding-agent personas (Claude Code / Codex / OpenCode in re
 - Product name: `src/shared/brand.ts` only.
 - `bun test` uses `test/fake-agent.sh` in place of a real CLI, so it makes no LLM calls. Keep it that way.
 - `bun scripts/peek.ts <session>` prints an agent's screen; use it to debug delivery and attention detection.
+- Don't run the server with `bun --hot`: a server hot reload re-creates the sessions module, which loses track of running agent PTYs while the agents keep running, orphaned. `bun dev` (no --hot) still gives frontend HMR through Bun.serve's development mode; restart by hand after server edits.
 
 
 Default to using Bun instead of Node.js.

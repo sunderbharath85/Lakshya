@@ -12,8 +12,8 @@ afterAll(() => {
   }
 });
 
-async function startServer(port: number, prepare?: (dir: string) => void) {
-  const dir = mkdtempSync(`${tmpdir()}/aos-teams-`);
+async function startServer(port: number, prepare?: (dir: string) => void, reuseDir?: string) {
+  const dir = reuseDir ?? mkdtempSync(`${tmpdir()}/aos-teams-`);
   prepare?.(dir);
   const proc = Bun.spawn(["bun", "src/server/index.ts"], {
     env: {
@@ -28,6 +28,10 @@ async function startServer(port: number, prepare?: (dir: string) => void) {
     stderr: "inherit",
   });
   servers.push({ proc, dir });
+  const stop = async () => {
+    proc.kill();
+    await proc.exited;
+  };
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 50 && !(await fetch(`${base}/api/state`).then((r) => r.ok, () => false)); i++) await Bun.sleep(100);
   const call = (path: string, method = "GET", body?: unknown, token?: string) =>
@@ -39,7 +43,7 @@ async function startServer(port: number, prepare?: (dir: string) => void) {
   const tokenOf = (id: string) =>
     new Database(`${dir}/data/agentic-os.sqlite`, { readonly: true }).query<{ token: string }, [string]>("SELECT token FROM sessions WHERE id = ?").get(id)!.token;
   const rpc = (path: string, method: string, params: unknown, token: string) => call(path, "POST", { jsonrpc: "2.0", id: 1, method, params }, token);
-  return { base, dir, call, tokenOf, rpc };
+  return { base, dir, call, tokenOf, rpc, stop };
 }
 
 const text = (t: string) => ({ kind: "message", messageId: crypto.randomUUID(), role: "user", parts: [{ kind: "text", text: t }] });
@@ -159,4 +163,18 @@ test("one persona, several sessions: extra engineers only when an orchestrator a
   expect(denied.result.metadata.to).toBe("main.qa-engineer-1"); // a first session is always fine
   const more = await s.rpc("/a2a/qa-engineer", "message/send", { message: text("Test more"), metadata: { newSession: true } }, sdeToken);
   expect(more.error.message).toContain("may not start new sessions");
+}, 20_000);
+
+test("after a restart, tasks owed by agents that were running are failed and the requester is told", async () => {
+  const first = await startServer(4791);
+  const task = await first.call("/api/request", "POST", { text: "Build the shop" });
+  expect(task.metadata.to).toBe("main.product-manager-1");
+  await first.stop();
+
+  const again = await startServer(4791, undefined, first.dir);
+  const state = await again.call("/api/state");
+  expect(state.sessions.find((x: any) => x.id === "main.product-manager-1").activity).toBe("exited");
+  const t = await again.call(`/api/tasks/${task.id}`);
+  expect(t.status.state).toBe("failed");
+  expect(t.status.message.parts[0].text).toContain("ended when Lakshya restarted");
 }, 20_000);

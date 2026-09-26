@@ -1,5 +1,6 @@
 import type { A2AMessage, A2ATask, Part, Persona, TaskState } from "../shared/types";
 import { TERMINAL_STATES, textOf } from "../shared/types";
+import { APP_NAME } from "../shared/brand";
 import { emitLocal, onEvent } from "./bus";
 import { canTalk } from "./prompt";
 import { getSession, notify, onSessionExit, runningSessions, spawnSession } from "./sessions";
@@ -302,6 +303,24 @@ onSessionExit((s) => {
     publish(t, msg);
   }
 });
+
+/**
+ * On startup no agent is running, so any task still assigned to an agent session can never finish:
+ * fail it and tell the requester, instead of leaving it "working" forever.
+ */
+export function failTasksOfStoppedSessions() {
+  for (const t of listTasks(100_000)) {
+    const to = t.metadata.to;
+    if (TERMINAL_STATES.includes(t.status.state) || to === "user" || to === "external") continue;
+    if (runningSessions().some((s) => s.id === to)) continue;
+    const msg = makeMessage(t, to, t.metadata.from, "agent", [
+      { kind: "text", text: `Session ${to} ended when ${APP_NAME} restarted, before finishing this task. Send it again to start a new session.` },
+    ]);
+    setState(t, "failed", msg);
+    deliver(t, msg, t.metadata.from, `${label(to)} stopped when the portal restarted.`);
+    publish(t, msg);
+  }
+}
 
 /** A note from the autopilot loop to whoever requested a task. */
 export function autopilotNote(taskId: string, text: string) {

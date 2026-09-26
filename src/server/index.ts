@@ -3,7 +3,7 @@ import index from "../web/index.html";
 import { join, resolve } from "node:path";
 import type { A2ATask, Persona, TaskState, Team } from "../shared/types";
 import { TERMINAL_STATES } from "../shared/types";
-import { A2AError, assertVisible, cancelTask, ERR, markUserRead, readInbox, sendMessage, updateTask, waitForTask, type Sender } from "./a2a";
+import { A2AError, assertVisible, cancelTask, ERR, failTasksOfStoppedSessions, markUserRead, readInbox, sendMessage, updateTask, waitForTask, type Sender } from "./a2a";
 import { EVENTS_TOPIC, onEvent, setPublisher, termTopic, emit } from "./bus";
 import { canTalk } from "./prompt";
 import { runtimeAvailability } from "./runtimes";
@@ -49,6 +49,7 @@ const PORTAL = `http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}`;
 const PUBLIC_URL = (process.env.AOS_PUBLIC_URL ?? PORTAL).replace(/\/$/, "");
 
 configureSessions(PORTAL);
+failTasksOfStoppedSessions();
 startSupervisor();
 
 // ---------- helpers ----------
