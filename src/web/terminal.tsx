@@ -129,10 +129,18 @@ export function TerminalView({ sessionId, mode }: { sessionId: string; mode: "fo
     };
     connect();
 
-    const input = term.onData((data) => {
+    const send = (data: string) => {
       if (!focus) return;
       if (isLive()) ws!.send(JSON.stringify({ type: "input", data }));
       else api(`/api/sessions/${sessionId}/input`, "POST", { data }).catch(() => {});
+    };
+    const input = term.onData(send);
+    // xterm sends Shift+Enter as a plain Enter, which submits. Send a line feed (Ctrl+J) instead:
+    // Claude Code, Codex and OpenCode all take it as a new line in the prompt.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key !== "Enter" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
+      if (e.type === "keydown") send("\n");
+      return false;
     });
     const ro = new ResizeObserver(() => sendResize());
     ro.observe(el);
