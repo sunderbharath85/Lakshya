@@ -42,6 +42,8 @@ export interface Persona {
   runtime: RuntimeId;
   /** Model passed to the CLI; empty means the CLI's default. */
   model: string;
+  /** Extra flags for the CLI, as typed on a command line (quotes group words), e.g. `--verbose --add-dir "../shared"`. */
+  args?: string;
   permissionMode: PermissionMode;
   /** Role prompt appended to the agent's system prompt. */
   instructions: string;

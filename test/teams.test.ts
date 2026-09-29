@@ -142,6 +142,11 @@ test("a new team can start from the marketing template, and resets back to it", 
   expect((await s.call("/api/teams/marketing-eu/personas")).map((p: any) => p.id)).toEqual(MARKETING_PERSONAS.map((p) => p.id));
 
   expect((await s.call("/api/teams", "POST", { name: "Sales", template: "sales" })).error).toContain("No team template");
+
+  // Extra CLI arguments are saved, and a line that can't be split is refused.
+  const ml = personas.find((p: any) => p.id === "marketing-lead");
+  expect((await s.call("/api/teams/marketing/personas/marketing-lead", "PUT", { ...ml, args: "--verbose --name 'Lead'" })).args).toBe("--verbose --name 'Lead'");
+  expect((await s.call("/api/teams/marketing/personas/marketing-lead", "PUT", { ...ml, args: '--name "Lead' })).error).toContain("Unclosed");
 }, 20_000);
 
 test("an install from before teams becomes the Main team, keeping its folder, personas and tasks", async () => {

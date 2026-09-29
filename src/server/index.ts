@@ -6,7 +6,7 @@ import { TEAM_TEMPLATES, TERMINAL_STATES } from "../shared/types";
 import { A2AError, assertVisible, cancelTask, ERR, failTasksOfStoppedSessions, markUserRead, readInbox, sendMessage, updateTask, waitForTask, type Sender } from "./a2a";
 import { EVENTS_TOPIC, onEvent, setPublisher, termTopic, emit } from "./bus";
 import { canTalk } from "./prompt";
-import { runtimeAvailability } from "./runtimes";
+import { runtimeAvailability, splitArgs } from "./runtimes";
 import { startSupervisor } from "./supervisor";
 import {
   configureSessions,
@@ -240,11 +240,22 @@ function directory(me: Extract<Sender, { kind: "session" }>) {
 
 // ---------- personas (per team) ----------
 
+/** Why a persona can't be saved, if it can't. */
+function personaProblem(p: Persona) {
+  try {
+    splitArgs(p.args ?? "");
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
 async function createPersona(req: Request, teamId: string) {
   teamOr404(teamId);
   const p = { ...((await req.json()) as Persona), teamId };
   if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(p.id ?? "")) return fail("Id must be 2-40 lowercase letters, digits or dashes");
   if (getPersona(teamId, p.id)) return fail(`This team already has a persona with id "${p.id}"`, 409);
+  const problem = personaProblem(p);
+  if (problem) return fail(problem);
   savePersona(p);
   emitPersonas();
   return json(p, 201);
@@ -253,6 +264,8 @@ async function createPersona(req: Request, teamId: string) {
 async function updatePersona(req: Request, teamId: string, id: string) {
   if (!getPersona(teamId, id)) return fail("No such persona", 404);
   const p = { ...((await req.json()) as Persona), id, teamId };
+  const problem = personaProblem(p);
+  if (problem) return fail(problem);
   // One entry persona per team.
   if (p.entry) for (const other of listPersonas(teamId)) if (other.id !== p.id && other.entry) savePersona({ ...other, entry: false });
   savePersona(p);

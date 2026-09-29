@@ -150,3 +150,35 @@ describe("codex folder trust", () => {
     }
   });
 });
+
+describe("extra arguments", () => {
+  test("a command line splits like a shell's: quotes group, backslash escapes", async () => {
+    const { splitArgs } = await import("../src/server/runtimes");
+    expect(splitArgs("")).toEqual([]);
+    expect(splitArgs("  --verbose   --aws-profile=dev ")).toEqual(["--verbose", "--aws-profile=dev"]);
+    expect(splitArgs(`--add-dir "my docs" --name='a b' plain\\ space ""`)).toEqual(["--add-dir", "my docs", "--name=a b", "plain space", ""]);
+    expect(splitArgs(`--say "a \\"quoted\\" word"`)).toEqual(["--say", 'a "quoted" word']);
+    expect(() => splitArgs(`--name "open`)).toThrow("Unclosed");
+  });
+
+  test("the persona's arguments follow the environment's, in every runtime", async () => {
+    process.env.AOS_CLAUDE_ARGS = "--verbose";
+    process.env.AOS_OPENCODE_BIN = "/bin/echo";
+    try {
+      const withArgs = (runtime: Persona["runtime"]) => {
+        const c = ctx("default");
+        return { ...c, persona: { ...c.persona, runtime, args: `--profile work --add-dir "a b"` } };
+      };
+      const claude = (await RUNTIMES.claude!.build(withArgs("claude"))).cmd;
+      expect(claude.slice(claude.indexOf("--verbose"))).toEqual(["--verbose", "--profile", "work", "--add-dir", "a b"]);
+      const codex = (await RUNTIMES.codex!.build(withArgs("codex"))).cmd;
+      // Before the kickoff prompt, which must stay last.
+      expect(codex.slice(-5, -1)).toEqual(["--profile", "work", "--add-dir", "a b"]);
+      const opencode = (await RUNTIMES.opencode!.build(withArgs("opencode"))).cmd;
+      expect(opencode.slice(-5)).toEqual(["--profile", "work", "--add-dir", "a b", "/work/space"]);
+    } finally {
+      delete process.env.AOS_CLAUDE_ARGS;
+      delete process.env.AOS_OPENCODE_BIN;
+    }
+  });
+});

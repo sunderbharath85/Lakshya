@@ -232,6 +232,12 @@ export function PersonaEditor({ s, team }: { s: LiveState; team: string }) {
                   <Input type="number" min={1} max={10} value={draft.maxInstances} onChange={(e) => set("maxInstances", Math.max(1, Number(e.target.value)))} />
                 </Field>
               </div>
+              <Field
+                label="Extra arguments"
+                hint={`Added to the ${s.runtimes.find((r) => r.id === draft.runtime)?.name ?? "CLI"} command line for this persona's sessions, e.g. --verbose. Quote values with spaces. Applies to sessions started from now on.`}
+              >
+                <Input className="font-mono text-xs" placeholder="None" value={draft.args ?? ""} onChange={(e) => set("args", e.target.value)} />
+              </Field>
             </Section>
 
             <Section title="Role">

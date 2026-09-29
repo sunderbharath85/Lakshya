@@ -43,9 +43,38 @@ function find(bin: string, fallbacks: string[]) {
   return Bun.which(bin) ?? fallbacks.map((f) => f.replace("~", homedir())).find((f) => existsSync(f)) ?? null;
 }
 
-/** Extra CLI flags from the environment, e.g. AOS_CLAUDE_ARGS="--verbose". */
-function extraArgs(runtime: RuntimeId) {
-  return (process.env[`AOS_${runtime.toUpperCase()}_ARGS`] ?? "").split(" ").filter(Boolean);
+/** Split a command line into arguments: whitespace separates, quotes group, backslash escapes. */
+export function splitArgs(line: string) {
+  const out: string[] = [];
+  let cur = "";
+  let quote: string | null = null;
+  let started = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]!;
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === "\\" && quote === '"' && i + 1 < line.length) cur += line[++i];
+      else cur += c;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+      started = true;
+    } else if (c === "\\" && i + 1 < line.length) {
+      cur += line[++i];
+      started = true;
+    } else if (/\s/.test(c)) {
+      if (started || cur) out.push(cur);
+      cur = "";
+      started = false;
+    } else cur += c;
+  }
+  if (quote) throw new Error(`Unclosed ${quote} in arguments: ${line}`);
+  if (started || cur) out.push(cur);
+  return out;
+}
+
+/** Extra CLI flags: every session's from the environment (AOS_CLAUDE_ARGS="--verbose"), then the persona's own. */
+function extraArgs(ctx: LaunchContext) {
+  return [...splitArgs(process.env[`AOS_${ctx.persona.runtime.toUpperCase()}_ARGS`] ?? ""), ...splitArgs(ctx.persona.args ?? "")];
 }
 
 /** The stdio MCP bridge every agent gets: its tools are how agents speak A2A. */
@@ -80,7 +109,7 @@ const claude: Runtime = {
     if (ctx.persona.model) cmd.push("--model", ctx.persona.model);
     if (ctx.permissionMode === "yolo") cmd.push("--dangerously-skip-permissions");
     else if (ctx.permissionMode === "acceptEdits") cmd.push("--permission-mode", "acceptEdits");
-    cmd.push(...extraArgs("claude"));
+    cmd.push(...extraArgs(ctx));
     // wait_for_task can block for minutes
     return { cmd, env: { MCP_TOOL_TIMEOUT: "900000" } };
   },
@@ -123,7 +152,7 @@ const codex: Runtime = {
     if (ctx.permissionMode === "yolo") cmd.push("--dangerously-bypass-approvals-and-sandbox");
     // Codex dropped --full-auto; this is what it used to expand to.
     else if (ctx.permissionMode === "acceptEdits") cmd.push("--sandbox", "workspace-write", "--ask-for-approval", "on-request");
-    cmd.push(...extraArgs("codex"), kickoff(ctx));
+    cmd.push(...extraArgs(ctx), kickoff(ctx));
     return { cmd, env: {} };
   },
 };
@@ -146,7 +175,7 @@ const opencode: Runtime = {
     const cmd = [opencode.binary()!];
     if (opencodeMajor(cmd[0]!) >= 2) cmd.push("--standalone");
     if (ctx.permissionMode === "yolo") cmd.push("--auto");
-    cmd.push(...extraArgs("opencode"), ctx.cwd);
+    cmd.push(...extraArgs(ctx), ctx.cwd);
     // --prompt only prefills the input box in OpenCode v2, so the kickoff is typed in instead. The role is
     // already loaded through `instructions`, so it doesn't ask to read role.md (outside the workspace).
     return { cmd, env: { OPENCODE_CONFIG: configFile, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }, firstInput: `You are ${ctx.persona.name} (session ${ctx.sessionId}) in a ${APP_NAME} team. Your role, rules and the team protocol are in your instructions. Call the a2a check_inbox tool now.`, ready: /ctrl\+p commands|Ask anything/i };

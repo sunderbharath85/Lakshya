@@ -233,7 +233,7 @@ You can also set YOLO per persona.
 | `AOS_WORKSPACE` | `./workspace` | Where new teams get their folders (`<root>/<team>`). Each team's folder can be changed in its settings. |
 | `AOS_DATA_DIR` | `./data` | SQLite database and per-session files (role prompt, MCP config, command). |
 | `AOS_CLAUDE_BIN`, `AOS_CODEX_BIN`, `AOS_OPENCODE_BIN` | found on `PATH` | CLI locations. |
-| `AOS_CLAUDE_ARGS`, `AOS_CODEX_ARGS`, `AOS_OPENCODE_ARGS` | | Extra flags for every session of that runtime. |
+| `AOS_CLAUDE_ARGS`, `AOS_CODEX_ARGS`, `AOS_OPENCODE_ARGS` | | Extra flags for every session of that runtime. For one persona only, use **Extra arguments** in its editor; those come after these. |
 
 The product name is set in one place: `src/shared/brand.ts`.
 
