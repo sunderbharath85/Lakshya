@@ -2,6 +2,7 @@ import { APP_NAME } from "../shared/brand";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { Persona, PermissionMode, RuntimeId } from "../shared/types";
+import { mediaKinds, MEDIA_SCRIPT } from "./prompt";
 import { ROOT } from "./store";
 
 /** Everything a runtime needs to start one agent session. */
@@ -74,6 +75,8 @@ const claude: Runtime = {
       "--allowedTools",
       "mcp__a2a",
     ];
+    // Media personas run the generation script without stopping to ask.
+    if (mediaKinds(ctx.persona).length) cmd.push(`Bash(bun ${MEDIA_SCRIPT}:*)`);
     if (ctx.persona.model) cmd.push("--model", ctx.persona.model);
     if (ctx.permissionMode === "yolo") cmd.push("--dangerously-skip-permissions");
     else if (ctx.permissionMode === "acceptEdits") cmd.push("--permission-mode", "acceptEdits");

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronDown, Plus, Settings2 } from "lucide-react";
-import type { Team } from "../shared/types";
+import { TEAM_TEMPLATES, type Team } from "../shared/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,14 +69,14 @@ const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").re
 export function NewTeamDialog({ s, open, onOpenChange, onCreated }: { s: LiveState; open: boolean; onOpenChange: (v: boolean) => void; onCreated: (t: Team) => void }) {
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
-  const [copyFrom, setCopyFrom] = useState("defaults");
+  const [personas, setPersonas] = useState("template:engineering");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (open) {
       setName("");
       setFolder("");
-      setCopyFrom("defaults");
+      setPersonas("template:engineering");
       setError(null);
     }
   }, [open]);
@@ -85,7 +85,8 @@ export function NewTeamDialog({ s, open, onOpenChange, onCreated }: { s: LiveSta
     setBusy(true);
     setError(null);
     try {
-      const team = await api<Team>("/api/teams", "POST", { name, workspaceDir: folder || undefined, copyFrom: copyFrom === "defaults" ? undefined : copyFrom });
+      const [kind, id] = personas.split(":");
+      const team = await api<Team>("/api/teams", "POST", { name, workspaceDir: folder || undefined, [kind === "template" ? "template" : "copyFrom"]: id });
       onOpenChange(false);
       onCreated(team);
     } catch (e) {
@@ -124,14 +125,18 @@ export function NewTeamDialog({ s, open, onOpenChange, onCreated }: { s: LiveSta
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs font-bold">Personas</Label>
-            <Select value={copyFrom} onValueChange={setCopyFrom}>
+            <Select value={personas} onValueChange={setPersonas}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="defaults">The default six (PM, Project Manager, SDE, Frontend, QA, Tester)</SelectItem>
+                {TEAM_TEMPLATES.map((t) => (
+                  <SelectItem key={t.id} value={`template:${t.id}`}>
+                    {t.label}
+                  </SelectItem>
+                ))}
                 {s.teams.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
+                  <SelectItem key={t.id} value={`team:${t.id}`}>
                     Copy {t.name}'s personas
                   </SelectItem>
                 ))}

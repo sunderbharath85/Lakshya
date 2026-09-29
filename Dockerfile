@@ -13,7 +13,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 # Tools the agents use while they work.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl ripgrep procps less openssh-client python3 \
+ && apt-get install -y --no-install-recommends git ca-certificates curl ripgrep procps less openssh-client python3 ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent CLIs. Pin versions with --build-arg; set one to "none" to leave it out.

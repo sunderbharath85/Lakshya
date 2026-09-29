@@ -27,11 +27,22 @@ Type a request in the bar at the bottom. The Product Manager picks it up, writes
 Run several projects side by side, each with its own team. Pick a team, or create one, from the switcher next to the product name.
 
 - **Own folder.** Each team works in its own folder: by default `<workspace root>/<team>`, changeable in the team's settings.
-- **Own personas.** A new team gets a copy of the default six, or of another team's personas. Editing one team's personas never changes another's.
+- **Own personas.** A new team starts from a template (Engineering or Marketing) or a copy of another team's personas. Editing one team's personas never changes another's.
 - **Isolated.** Agents only see and message their own team. A persona id like `sde` means that team's engineer; another team's agents and tasks don't exist for them.
 - **One place for you.** The request bar, sidebar, Tasks and Personas all show the current team. A red count on the switcher tells you when another team is waiting on you.
 
 Session ids carry the team (`mobile-app.sde-1`); the UI and agents can use the short form (`sde-1`) inside a team. An existing install from before teams becomes the **Main** team, keeping its folder, personas and history. Deleting a team removes its personas, tasks and history, but not its folder.
+
+### Marketing team
+
+The Marketing template has a **Marketing Lead** (takes your request, writes the campaign brief, delegates and reviews), a **Copywriter** (copy, scripts, storyboards), an **Image Designer** and a **Video Producer**. None of the agent CLIs generate images or video on their own, so personas with the *Image generation* or *Video generation* skill get `scripts/media.ts`, which calls:
+
+| Key in `.env` | Images | Video |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | `gpt-image-2` | `sora-2` |
+| `GEMINI_API_KEY` | Imagen 4 | Veo 3 |
+
+With both set, OpenAI is used unless `LAKSHYA_MEDIA_PROVIDER=gemini`. The Video Producer edits clips together with ffmpeg (installed in the Docker image; `brew install ffmpeg` or your package manager otherwise). Without a key the team can still write copy and storyboards; the image and video personas will tell you generation isn't set up. Generation is billed to your API account.
 
 ## Run with Docker Compose
 

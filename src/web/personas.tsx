@@ -95,7 +95,7 @@ export function PersonaEditor({ s, team }: { s: LiveState; team: string }) {
     setSelectedId(s.personas.find((p) => p.id !== draft.id)?.id ?? null);
   };
   const reset = async () => {
-    if (!confirm("Replace this team's personas with the six defaults? Its edits and custom personas will be lost. Other teams are not affected.")) return;
+    if (!confirm("Replace this team's personas with its template's defaults? Its edits and custom personas will be lost. Other teams are not affected.")) return;
     await api(`${base}/reset`, "POST");
     setIsNew(false);
   };
@@ -277,7 +277,7 @@ export function PersonaEditor({ s, team }: { s: LiveState; team: string }) {
             </Section>
 
             <Button type="button" variant="link" className="justify-self-start px-0 text-muted-foreground" onClick={reset}>
-              Restore the default team
+              Restore the default personas
             </Button>
           </div>
         </form>

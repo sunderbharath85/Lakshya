@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { DEFAULT_PERSONAS } from "../src/server/default-personas";
+import { DEFAULT_PERSONAS, MARKETING_PERSONAS } from "../src/server/default-personas";
 
 const servers: { proc: Bun.Subprocess; dir: string }[] = [];
 afterAll(() => {
@@ -119,6 +119,29 @@ test("a new team can start from a copy of another team's personas", async () => 
   expect(copied).toMatchObject({ teamId: "main-copy", rules: ["Test on real devices"] });
   // Same name again gets a unique id.
   expect((await s.call("/api/teams", "POST", { name: "Main copy" })).id).toBe("main-copy-2");
+}, 20_000);
+
+test("a new team can start from the marketing template, and resets back to it", async () => {
+  const s = await startServer(4789);
+  const team = await s.call("/api/teams", "POST", { name: "Marketing", template: "marketing" });
+  expect(team).toMatchObject({ id: "marketing", template: "marketing" });
+  const ids = () => s.call("/api/teams/marketing/personas").then((ps: any[]) => ps.map((p) => p.id));
+  expect(await ids()).toEqual(MARKETING_PERSONAS.map((p) => p.id));
+  const personas = await s.call("/api/teams/marketing/personas");
+  expect(personas.find((p: any) => p.entry).id).toBe("marketing-lead");
+  expect(personas.find((p: any) => p.id === "image-designer")).toMatchObject({ runtime: "claude", skills: [{ id: "image-generation" }] });
+  // The main team keeps the engineering personas.
+  expect((await s.call("/api/teams/main/personas")).map((p: any) => p.id)).toEqual(DEFAULT_PERSONAS.map((p) => p.id));
+
+  await s.call("/api/teams/marketing/personas/copywriter", "DELETE");
+  await s.call("/api/teams/marketing/personas/reset", "POST");
+  expect(await ids()).toEqual(MARKETING_PERSONAS.map((p) => p.id));
+  // A copy of a marketing team resets to marketing too.
+  await s.call("/api/teams", "POST", { name: "Marketing EU", copyFrom: "marketing" });
+  await s.call("/api/teams/marketing-eu/personas/reset", "POST");
+  expect((await s.call("/api/teams/marketing-eu/personas")).map((p: any) => p.id)).toEqual(MARKETING_PERSONAS.map((p) => p.id));
+
+  expect((await s.call("/api/teams", "POST", { name: "Sales", template: "sales" })).error).toContain("No team template");
 }, 20_000);
 
 test("an install from before teams becomes the Main team, keeping its folder, personas and tasks", async () => {

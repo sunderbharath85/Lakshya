@@ -17,7 +17,17 @@ export interface Team {
   name: string;
   workspaceDir: string;
   createdAt: number;
+  /** The persona template the team started from; "Reset to defaults" goes back to it. */
+  template?: TeamTemplate;
 }
+
+export type TeamTemplate = "engineering" | "marketing";
+
+/** Starting personas for a new team. */
+export const TEAM_TEMPLATES: { id: TeamTemplate; label: string }[] = [
+  { id: "engineering", label: "Engineering (PM, Project Manager, SDE, Frontend, QA, Tester)" },
+  { id: "marketing", label: "Marketing (Marketing Lead, Copywriter, Image Designer, Video Producer)" },
+];
 
 export interface Persona {
   /** Unique within its team. */

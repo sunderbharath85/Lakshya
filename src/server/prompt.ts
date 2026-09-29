@@ -1,6 +1,34 @@
 import { APP_NAME } from "../shared/brand";
 import type { Persona, Team } from "../shared/types";
-import { listPersonas } from "./store";
+import { listPersonas, ROOT } from "./store";
+
+/** Generates images and video for personas with those skills. */
+export const MEDIA_SCRIPT = `${ROOT}/scripts/media.ts`;
+
+/** What a persona's skills let it generate. */
+export function mediaKinds(persona: Persona) {
+  const ids = persona.skills.map((s) => s.id);
+  return (["image", "video"] as const).filter((k) => ids.includes(`${k}-generation`));
+}
+
+function mediaSection(persona: Persona) {
+  const kinds = mediaKinds(persona);
+  if (!kinds.length) return [];
+  const keys = [process.env.OPENAI_API_KEY && "OpenAI", (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) && "Google Gemini"].filter(Boolean);
+  return [
+    "",
+    `## Generating ${kinds.join(" and ")}`,
+    ...kinds.map((k) =>
+      k === "image"
+        ? `- Image: \`bun ${MEDIA_SCRIPT} image --prompt "<prompt>" --out assets/images/<name>.png [--size 1536x1024]\``
+        : `- Video: \`bun ${MEDIA_SCRIPT} video --prompt "<prompt>" --out assets/video/<name>.mp4 [--size 1280x720] [--seconds 8]\` (takes minutes; run it in the foreground and wait)`,
+    ),
+    "- Add --provider openai|gemini or --model <id> to choose. It prints JSON with the saved path; check the file before you deliver it.",
+    keys.length
+      ? `- Configured: ${keys.join(" and ")}.`
+      : "- No media API key is set (OPENAI_API_KEY or GEMINI_API_KEY), so generation will fail. Tell whoever gave you the task, and ask the user to add a key.",
+  ];
+}
 
 export function canTalk(from: Persona, toPersonaId: string) {
   return from.canTalkTo.includes("*") || from.canTalkTo.includes(toPersonaId);
@@ -19,6 +47,7 @@ export function buildSystemPrompt(teamInfo: Team, persona: Persona, sessionId: s
     "",
     "## Rules",
     ...(persona.rules.length ? persona.rules.map((r) => `- ${r}`) : ["- None beyond the team protocol."]),
+    ...mediaSection(persona),
     "",
     `## Your team (${teamInfo.name})`,
     "You only work with this team. Other teams exist in this portal but you cannot see or message them.",

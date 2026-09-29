@@ -1,8 +1,8 @@
 import { APP_NAME } from "../shared/brand";
 import index from "../web/index.html";
 import { join, resolve } from "node:path";
-import type { A2ATask, Persona, TaskState, Team } from "../shared/types";
-import { TERMINAL_STATES } from "../shared/types";
+import type { A2ATask, Persona, TaskState, Team, TeamTemplate } from "../shared/types";
+import { TEAM_TEMPLATES, TERMINAL_STATES } from "../shared/types";
 import { A2AError, assertVisible, cancelTask, ERR, failTasksOfStoppedSessions, markUserRead, readInbox, sendMessage, updateTask, waitForTask, type Sender } from "./a2a";
 import { EVENTS_TOPIC, onEvent, setPublisher, termTopic, emit } from "./bus";
 import { canTalk } from "./prompt";
@@ -267,8 +267,7 @@ function removePersona(teamId: string, id: string) {
 }
 
 function resetPersonas(teamId: string) {
-  teamOr404(teamId);
-  seedPersonas(teamId);
+  seedPersonas(teamId, teamOr404(teamId).template);
   emitPersonas();
   return json(listPersonas(teamId));
 }
@@ -386,15 +385,18 @@ const serveOn = (hostname: string) =>
       GET: () => json(listTeams()),
       POST: (req) =>
         guard(async () => {
-          const body = (await req.json()) as { name?: string; workspaceDir?: string; copyFrom?: string };
+          const body = (await req.json()) as { name?: string; workspaceDir?: string; copyFrom?: string; template?: TeamTemplate };
           const name = body.name?.trim();
           if (!name) return fail("Give the team a name");
+          if (body.template && !TEAM_TEMPLATES.some((t) => t.id === body.template)) return fail(`No team template "${body.template}"`);
           const id = teamSlug(name);
           const source = body.copyFrom ? listPersonas(body.copyFrom) : undefined;
           if (body.copyFrom && !source?.length) return fail(`No team "${body.copyFrom}" to copy personas from`);
-          const team: Team = { id, name, workspaceDir: resolve(body.workspaceDir?.trim() || join(WORKSPACES_ROOT, id)), createdAt: Date.now() };
+          // A copy resets to the template its source started from.
+          const template = body.copyFrom ? getTeam(body.copyFrom)?.template : body.template;
+          const team: Team = { id, name, workspaceDir: resolve(body.workspaceDir?.trim() || join(WORKSPACES_ROOT, id)), createdAt: Date.now(), template };
           saveTeam(team);
-          seedPersonas(id, source);
+          seedPersonas(id, source ?? template);
           emitTeams();
           emitPersonas();
           return json(team, 201);

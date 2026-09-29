@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { A2AMessage, A2ATask, Persona, SessionInfo, Settings, Team } from "../shared/types";
-import { DEFAULT_PERSONAS } from "./default-personas";
+import type { A2AMessage, A2ATask, Persona, SessionInfo, Settings, Team, TeamTemplate } from "../shared/types";
+import { TEMPLATE_PERSONAS } from "./default-personas";
 
 export const ROOT = resolve(import.meta.dir, "../..");
 export const DATA_DIR = resolve(process.env.AOS_DATA_DIR ?? `${ROOT}/data`);
@@ -97,9 +97,9 @@ export function deleteTeam(id: string) {
 
 // ---------- personas ----------
 
-/** Give a team its personas: the defaults, or copies of another team's. */
-export function seedPersonas(teamId: string, from?: Persona[]) {
-  const source = from ?? DEFAULT_PERSONAS;
+/** Give a team its personas: a template's, or copies of another team's. */
+export function seedPersonas(teamId: string, from: Persona[] | TeamTemplate = "engineering") {
+  const source = typeof from === "string" ? TEMPLATE_PERSONAS[from] : from;
   db.transaction(() => {
     db.query("DELETE FROM personas WHERE team_id = ?").run(teamId);
     source.forEach((p, i) => savePersona({ ...structuredClone(p), teamId } as Persona, i));
