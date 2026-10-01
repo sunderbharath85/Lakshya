@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { DEFAULT_PERSONAS, MARKETING_PERSONAS } from "../src/server/default-personas";
+import { DEFAULT_PERSONAS, DEVOPS_PERSONAS, MARKETING_PERSONAS } from "../src/server/default-personas";
 
 const servers: { proc: Bun.Subprocess; dir: string }[] = [];
 afterAll(() => {
@@ -140,6 +140,12 @@ test("a new team can start from the marketing template, and resets back to it", 
   await s.call("/api/teams", "POST", { name: "Marketing EU", copyFrom: "marketing" });
   await s.call("/api/teams/marketing-eu/personas/reset", "POST");
   expect((await s.call("/api/teams/marketing-eu/personas")).map((p: any) => p.id)).toEqual(MARKETING_PERSONAS.map((p) => p.id));
+
+  const devops = await s.call("/api/teams", "POST", { name: "DevOps", template: "devops" });
+  expect(devops).toMatchObject({ id: "devops", template: "devops" });
+  const ops = await s.call("/api/teams/devops/personas");
+  expect(ops.map((p: any) => p.id)).toEqual(DEVOPS_PERSONAS.map((p) => p.id));
+  expect(ops.filter((p: any) => p.entry).map((p: any) => p.id)).toEqual(["devops-lead"]);
 
   expect((await s.call("/api/teams", "POST", { name: "Sales", template: "sales" })).error).toContain("No team template");
 

@@ -27,7 +27,7 @@ Type a request in the bar at the bottom. The Product Manager picks it up, writes
 Run several projects side by side, each with its own team. Pick a team, or create one, from the switcher next to the product name.
 
 - **Own folder.** Each team works in its own folder: by default `<workspace root>/<team>`, changeable in the team's settings.
-- **Own personas.** A new team starts from a template (Engineering or Marketing) or a copy of another team's personas. Editing one team's personas never changes another's.
+- **Own personas.** A new team starts from a template (Engineering, Marketing or DevOps) or a copy of another team's personas. Editing one team's personas never changes another's.
 - **Isolated.** Agents only see and message their own team. A persona id like `sde` means that team's engineer; another team's agents and tasks don't exist for them.
 - **One place for you.** The request bar, sidebar, Tasks and Personas all show the current team. A red count on the switcher tells you when another team is waiting on you.
 
@@ -43,6 +43,10 @@ The Marketing template has a **Marketing Lead** (takes your request, writes the 
 | `GEMINI_API_KEY` | Imagen 4 | Veo 3 |
 
 With both set, OpenAI is used unless `LAKSHYA_MEDIA_PROVIDER=gemini`. The Video Producer edits clips together with ffmpeg (installed in the Docker image; `brew install ffmpeg` or your package manager otherwise). Without a key the team can still write copy and storyboards; the image and video personas will tell you generation isn't set up. Generation is billed to your API account.
+
+### DevOps team
+
+The DevOps template has a **DevOps Lead** (takes your request, writes `docs/ops-plan.md`, delegates and reviews), a **Platform Engineer** (Terraform/OpenTofu, Kubernetes, Helm, Docker), a **CI/CD Engineer** (pipelines and releases), a **Site Reliability Engineer** (monitoring, alerts, SLOs, runbooks) and a **Security Engineer** (reviews and scanning). They work from infrastructure as code and validate with plans and dry runs. Anything that would change a shared or production environment comes to you first as a **Needs you** question with the exact command and its plan; the agents use whatever cloud and cluster credentials their shell has, so give them only what you're comfortable with.
 
 ## Run with Docker Compose
 

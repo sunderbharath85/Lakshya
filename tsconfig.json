@@ -27,5 +27,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // The agents' own projects and the portal's data, not the portal's code.
+  "exclude": ["node_modules", "workspace", "data"]
 }

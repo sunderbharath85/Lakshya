@@ -21,12 +21,13 @@ export interface Team {
   template?: TeamTemplate;
 }
 
-export type TeamTemplate = "engineering" | "marketing";
+export type TeamTemplate = "engineering" | "marketing" | "devops";
 
 /** Starting personas for a new team. */
 export const TEAM_TEMPLATES: { id: TeamTemplate; label: string }[] = [
   { id: "engineering", label: "Engineering (PM, Project Manager, SDE, Frontend, QA, Tester)" },
   { id: "marketing", label: "Marketing (Marketing Lead, Copywriter, Image Designer, Video Producer)" },
+  { id: "devops", label: "DevOps (DevOps Lead, Platform, CI/CD, SRE, Security)" },
 ];
 
 export interface Persona {
